@@ -144,16 +144,16 @@ function renderSeguranca() {
   const box = (id, pai) => { let b = $(id); if (!b) { b = document.createElement('div'); b.id = id; b.style.cssText = 'margin-top:18px;padding-top:14px;border-top:1px solid var(--line)'; $(pai).appendChild(b); } return b; };
   const L = box('gBoxL', 'fLogin'), P = box('gBoxP', 'fPedidos'), logado = user && !user.isAnonymous;
   L.style.display = logado ? 'none' : 'block';
-  L.innerHTML = '<p style="color:var(--mut);font-size:13px;margin:0 0 10px">Já comprou antes ou quer guardar seus pedidos?</p><button class="btn o" style="width:100%" onclick="entrarGoogle()">Continuar com Google</button>';
+  L.innerHTML = '<p style="color:var(--mut);font-size:13px;margin:0 0 10px">Já comprou antes ou quer guardar seus pedidos?</p><button class="btn o" style="width:100%" onclick="entrarGoogle()">Logar com o Google</button>';
   P.innerHTML = logado
     ? '<p style="color:var(--mut);font-size:13px;margin:0 0 10px">Conectado como ' + esc(user.email || user.displayName || 'Google') + '</p><button class="btn o" style="width:100%" onclick="sairConta()">Sair</button>'
-    : '<p style="color:var(--mut);font-size:13px;margin:0 0 10px">Seus pedidos estão salvos só neste aparelho. Se você limpar o navegador ou trocar de celular, perde o histórico.</p><button class="btn o" style="width:100%;margin-bottom:8px" onclick="entrarGoogle()">Proteger minha conta com Google</button><button class="btn o" style="width:100%" onclick="sairConta()">Sair</button>';
+    : '<p style="color:var(--mut);font-size:13px;margin:0 0 10px">Seus pedidos estão salvos só neste aparelho. Se você limpar o navegador ou trocar de celular, perde o histórico.</p><button class="btn o" style="width:100%;margin-bottom:8px" onclick="entrarGoogle()">Logar com o Google</button><button class="btn o" style="width:100%" onclick="sairConta()">Sair</button>';
 }
 async function entrarGoogle() {
   const prov = new firebase.auth.GoogleAuthProvider();
   try {
     if (user && user.isAnonymous) {
-      try { await user.linkWithPopup(prov); await atualizarConta(); aviso('Conta protegida! Seus pedidos agora ficam salvos.'); }
+      try { await user.linkWithPopup(prov); await atualizarConta(); aviso('Login feito! Seus pedidos agora ficam salvos na sua conta Google.'); }
       catch (e) {
         if (e.code === 'auth/credential-already-in-use' && e.credential) { await auth.signInWithCredential(e.credential); aviso('Bem-vindo de volta!'); }   // este Google já tem conta: entra nela
         else throw e;
@@ -162,7 +162,7 @@ async function entrarGoogle() {
   } catch (e) { if (!['auth/popup-closed-by-user', 'auth/cancelled-popup-request'].includes(e.code)) err(e); }
 }
 async function sairConta() {
-  if (user && user.isAnonymous && !confirm('Sua conta não está protegida com Google. Se sair, você perde o acesso ao histórico de pedidos deste aparelho. Sair mesmo assim?')) return;
+  if (user && user.isAnonymous && !confirm('Você não fez login com o Google. Se sair, você perde o acesso ao histórico de pedidos deste aparelho. Sair mesmo assim?')) return;
   await auth.signOut(); cart = []; $('qtd').textContent = 0; fechar(); aviso('Você saiu da conta');
 }
 
