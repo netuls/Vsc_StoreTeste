@@ -370,7 +370,7 @@ async function salvarProd() {
 
 // ── Relatórios ──
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-const REC = ['Confirmado', 'Em separação', 'Saiu para entrega', 'Entregue'];   // status que contam como venda
+const REC = ['Entregue'];   // status que contam como venda: SOMENTE pedidos entregues entram na receita
 let POR = {};
 const mkey = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 const mnome = k => { const [y, m] = k.split('-'); return MESES[m - 1] + ' de ' + y; };
@@ -426,8 +426,8 @@ function relRender() {
   $('rOut').innerHTML =
     `<h3 class="pt" style="margin-bottom:10px">${mnome(k).toUpperCase()}</h3><div class="rk">`
     + kpi('Receita total', R$(mes.receita), varp === null ? 'sem mês anterior para comparar' : (varp >= 0 ? '▲ ' : '▼ ') + Math.abs(varp) + '% vs mês anterior')
-    + kpi('Pedidos', mes.pedidos, 'confirmados') + kpi('Peças vendidas', mes.itens, 'unidades') + kpi('Ticket médio', R$(tick), 'por pedido')
-    + kpi('Cancelados', mes.cancel, fin ? Math.round(mes.cancel / fin * 100) + '% dos finalizados' : 'nenhum no mês') + kpi('Aguardando', mes.pend, 'ainda não confirmados') + `</div>`
+    + kpi('Pedidos', mes.pedidos, 'entregues') + kpi('Peças vendidas', mes.itens, 'unidades') + kpi('Ticket médio', R$(tick), 'por pedido')
+    + kpi('Cancelados', mes.cancel, fin ? Math.round(mes.cancel / fin * 100) + '% dos finalizados' : 'nenhum no mês') + kpi('Aguardando', mes.pend, 'ainda não entregues') + `</div>`
     + `<div class="rp"><h3>POR FORMA DE PAGAMENTO · ${mnome(k).toUpperCase()}</h3>${pagBars(mes)}</div>`
     + `<div class="rp"><h3>FORMA DE PAGAMENTO · ÚLTIMOS 12 MESES</h3><p class="rd">Total de ${R$(tudo.receita)} em ${tudo.pedidos} pedido(s). Veja qual forma de pagamento mais rendeu.</p>${pagBars(tudo, true)}</div>`
     + `<div class="rp"><h3>POR PRODUTO · ${mnome(k).toUpperCase()}</h3>${prods.map(([n, x]) => barra(esc(n), x.q + ' unidade(s)', x.v, pmax)).join('') || '<p class="rd">Sem vendas no período.</p>'}</div>`
@@ -457,7 +457,7 @@ async function clCarregar() {
       const p = d.data(); if (!p.uid) return; const c = g(p.uid), t = clTs(p.criadoEm);
       if (!c.nome && p.cliente) c.nome = p.cliente.nome; if (!c.tel && p.cliente) c.tel = p.cliente.tel;
       if (t && (!c.ultPed || t > c.ultPed)) c.ultPed = t;
-      if (p.status !== 'Cancelado') { c.ped++; c.gasto += p.total || 0; }
+      if (p.status === 'Entregue') { c.ped++; c.gasto += p.total || 0; }   // só pedidos entregues contam como compra
     });
     clL = Object.values(M);
   } catch (e) { return alert('Erro ao carregar clientes: ' + e.message + '\n\nConfira se o firestore.rules permite o admin ler "clientes" e "visitas".'); }
@@ -471,7 +471,7 @@ function clRender() {
   }).sort((a, b) => od === 'gasto' ? b.gasto - a.gasto : od === 'n' ? b.n - a.n : (ult(b) || 0) - (ult(a) || 0));
   const online = clL.filter(c => c.ultVis && agora - c.ultVis < 3e5).length, hoje = clL.filter(c => c.ultVis && agora - c.ultVis < 864e5).length;
   const kpi = (t, v, s) => `<div class="rc"><small>${t}</small><b>${v}</b><i>${s}</i></div>`;
-  $('clk').innerHTML = kpi('Pessoas', clL.length, 'visitantes + clientes') + kpi('Cadastradas', clL.filter(c => c.tel).length, 'com nome e WhatsApp') + kpi('Já compraram', clL.filter(c => c.ped).length, 'pedido não cancelado') + kpi('Entraram em 24h', hoje, 'visitas recentes') + kpi('Online agora', online, 'últimos 5 minutos');
+  $('clk').innerHTML = kpi('Pessoas', clL.length, 'visitantes + clientes') + kpi('Cadastradas', clL.filter(c => c.tel).length, 'com nome e WhatsApp') + kpi('Já compraram', clL.filter(c => c.ped).length, 'pedido entregue') + kpi('Entraram em 24h', hoje, 'visitas recentes') + kpi('Online agora', online, 'últimos 5 minutos');
   $('clb').innerHTML = l.map(c => {
     const tel = String(c.tel || '').replace(/\D/g, '');
     return `<tr><td data-l="Quem"><b>${esc(c.nome || 'Visitante')}</b><br><small style="color:var(--mut)">${esc(c.bairro)}${c.bairro && c.ap ? ' · ' : ''}${esc(c.ap)}${!c.nome ? ' · ' + esc(c.id.slice(0, 6)) : ''}</small></td>
