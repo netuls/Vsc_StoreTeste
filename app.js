@@ -199,7 +199,19 @@ async function atualizarConta() {
     $('meus').innerHTML = docs.map(p => `<div class="li" style="display:block">${p.numero ? '<small style="color:var(--mut)">Pedido nº ' + fmtNum(p.numero) + '</small><br>' : ''}<b>${R$(p.total)}</b> · ${esc(p.pagamento)} <span class="st s${STIDX[p.status] ?? 0}">${esc(p.status)}</span><br><small style="color:var(--mut)">${p.itens.map(i => esc(i.nome) + ' ' + esc(i.tam) + '×' + i.q).join(', ')}${p.entrega ? '<br>' + (p.entrega.tipo === 'Retirada' ? 'Retirada na loja' + (RETIRADA.endereco ? ' · ' + esc(RETIRADA.endereco) : '') : 'Entrega' + (p.frete ? ' · frete ' + R$(p.frete) : '')) : ''}</small></div>`).join('') || '<p style="color:var(--mut)">Você ainda não fez pedidos.</p>';
   });
 }
-auth.onAuthStateChanged(u => { user = u; atualizarConta(); });
+// Todo visitante ganha uma identidade anônima e é registrado em "visitas" (aparece na aba Clientes do painel)
+let visitado = null;
+function registrarVisita() {
+  if (!user || visitado === user.uid) return; visitado = user.uid;
+  const F = firebase.firestore.FieldValue, ref = db.collection('visitas').doc(user.uid);
+  const novaSessao = !sessionStorage.getItem('v_' + user.uid); sessionStorage.setItem('v_' + user.uid, 1);
+  ref.get().then(s => ref.set({
+    ultima: F.serverTimestamp(), aparelho: navigator.userAgent.slice(0, 80),
+    ...(perfil.nome ? { nome: (perfil.nome + ' ' + (perfil.sobrenome || '')).trim() } : {}),
+    ...(novaSessao ? { n: F.increment(1) } : {}), ...(s.exists ? {} : { primeira: F.serverTimestamp() })
+  }, { merge: true })).catch(() => {});
+}
+auth.onAuthStateChanged(u => { user = u; if (!u) { atualizarConta(); auth.signInAnonymously().catch(() => {}); return; } atualizarConta().then(registrarVisita); });
 
 // Entrar / proteger a conta com Google. Cliente anônimo: vincula o Google à mesma conta (os pedidos continuam). Aparelho novo: entra e recupera o histórico.
 function renderSeguranca() {
@@ -238,7 +250,7 @@ async function salvarDados() {
     perfil = { ...perfil, nome, sobrenome, tel }; perfilUid = user.uid;
     await db.collection('clientes').doc(user.uid).set(perfil);
   } catch (e) { return err(e); }
-  await atualizarConta(); aviso('Dados salvos!'); cart.length ? abrir('pCarrinho') : fechar();
+  await atualizarConta(); visitado = null; registrarVisita(); aviso('Dados salvos!'); cart.length ? abrir('pCarrinho') : fechar();
 }
 const fmtTel = t => t.length === 11 ? `(${t.slice(0, 2)}) ${t.slice(2, 7)}-${t.slice(7)}` : t.length === 10 ? `(${t.slice(0, 2)}) ${t.slice(2, 6)}-${t.slice(6)}` : t;
 const fmtNum = n => String(n).padStart(2, '0');
