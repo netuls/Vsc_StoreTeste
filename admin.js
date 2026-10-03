@@ -42,7 +42,7 @@ function beep() {
     if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
   } catch (e) {}
 }
-const OPC_NOTIF = { icon: 'icon-192.png', badge: 'icon-192.png', renotify: true, silent: false, requireInteraction: true, vibrate: [300, 150, 300, 150, 500] };
+const OPC_NOTIF = { icon: 'icon-192.png', badge: 'badge.png', renotify: true, silent: false, requireInteraction: true, vibrate: [300, 150, 300, 150, 500] };
 // Alerta de pedido novo com o painel aberto: som, notificação do sistema e título piscando
 let ultimoAviso = 0, piscar = null;
 function piscarTitulo() {
