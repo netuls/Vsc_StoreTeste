@@ -14,7 +14,14 @@
 <label>WhatsApp que recebe os pedidos (DDD + número)</label><input id="aw" type="tel" inputmode="tel" placeholder="85999998888">
 <label>Reiniciar a contagem dos pedidos (nº 01, 02, 03...)</label><select id="ar"><option value="nunca">Nunca (continua sempre)</option><option value="diario">Todo dia</option><option value="semanal">Toda semana (na segunda-feira)</option><option value="mensal">Todo mês</option></select>
 <button class="btn o" style="display:block;margin-bottom:18px" onclick="reiniciarContagem()">Reiniciar contagem agora (próximo pedido = 01)</button>
-<label>Taxa de entrega (R$) — deixe vazio ou 0 para não cobrar frete</label><input id="afr" type="number" step="0.01" min="0" inputmode="decimal" placeholder="10.00">
+<label>Endereço para retirada na loja (aparece para o cliente que escolher retirar)</label><input id="arl" placeholder="Rua, número, bairro, cidade" onchange="salvarRetirada()">
+<label>Horário de retirada (opcional)</label><input id="arh" placeholder="Seg a Sáb, das 9h às 18h" onchange="salvarRetirada()">
+<label>Taxa padrão de entrega (R$) — vale para todos os bairros quando a lista abaixo estiver vazia, e para bairros fora da lista (se você permitir). Vazio ou 0 = sem taxa</label><input id="afr" type="number" step="0.01" min="0" inputmode="decimal" placeholder="10.00">
+<label>Taxa de entrega por bairro — digite o bairro, o valor e toque em Adicionar (salva na hora)</label>
+<div style="display:grid;grid-template-columns:1fr 110px;gap:0 10px"><div><input id="bn" placeholder="Bairro (ex.: Aldeota)" onkeydown="if(event.key==='Enter')$('bv').focus()"></div><div><input id="bv" type="number" step="0.01" min="0" inputmode="decimal" placeholder="Valor" onkeydown="if(event.key==='Enter')addBairro()"></div></div>
+<button class="btn o" style="display:block;margin-bottom:12px" onclick="addBairro()">Adicionar bairro</button>
+<div id="bl" style="margin-bottom:18px"></div>
+<label>Bairro que não está na lista</label><select id="abn" style="width:100%;margin-bottom:12px;padding:10px" onchange="db.collection('config').doc('loja').set({bairroOutros:this.value},{merge:true}).then(()=>avisoAdm('Salvo'))"><option value="padrao">Cobrar a taxa padrão</option><option value="bloquear">Não entregar (só retirada)</option></select>
 <label>Frete grátis a partir de (R$) — opcional</label><input id="afg" type="number" step="0.01" min="0" inputmode="decimal" placeholder="200.00">
 <label>Logo do site do cliente</label><input id="af" type="file" accept="image/*" onchange="lerLogo(this)">
 <img id="alogo" alt="" style="display:none;max-height:90px;margin:0 0 12px;background:#000;border:1px solid var(--line)"><button class="btn o" style="display:block;margin-bottom:18px" onclick="tirarLogo()">Voltar para a logo padrão</button>
