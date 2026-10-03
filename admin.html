@@ -4,10 +4,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script></head><body class="adm">
-<header><a class="brand" href="admin.html"><img src="logo-emblem.png" alt="VSC"><span class="logo-t pt">PAINEL ADMIN</span></a><nav><button class="btn" id="bPush" onclick="ativarPush()">🔔 Ativar avisos</button><button class="btn o" onclick="auth.signOut()">Sair</button></nav></header>
+<header><a class="brand" href="admin.html"><img src="logo-emblem.png" alt="VSC"><span class="logo-t pt">PAINEL ADMIN</span></a><nav><button class="btn" id="bPush" onclick="ativarPush()">🔔 Ativar avisos</button><button class="btn o" onclick="testarAvisos()">🔧 Testar</button><button class="btn o" onclick="auth.signOut()">Sair</button></nav></header>
 <div class="sec" id="login" style="max-width:380px"><h2 class="pt">ENTRAR</h2><label>Senha</label><input id="s" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')entrarAdmin()"><button class="btn" style="width:100%" onclick="entrarAdmin()">Entrar</button></div>
 <div id="app" style="display:none">
-<div class="tabs"><button class="on" id="tbP" onclick="aba('P')">Painel</button><button id="tbR" onclick="aba('R')">Relatórios</button></div>
+<div class="tabs"><button class="on" id="tbP" onclick="aba('P')">Painel</button><button id="tbR" onclick="aba('R')">Relatórios</button><button id="tbC" onclick="aba('C')">Clientes</button></div>
 <div id="tP">
 <div class="sec"><h2 class="pt">PEDIDOS</h2><div style="overflow:auto"><table class="tb"><thead><tr><th>Cliente</th><th>WhatsApp</th><th>Itens</th><th>Data</th><th>Pagamento</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody id="peds"></tbody></table></div></div>
 <div class="sec"><h2 class="pt">AJUSTES DA LOJA</h2>
@@ -42,6 +42,12 @@
 <p class="rd">Vendas por mês, por forma de pagamento e por produto. Entram na receita os pedidos <b>confirmados</b>, em separação, saiu para entrega e entregues. Cancelados e pedidos ainda não confirmados (inclusive Pix aguardando conferência) ficam de fora.</p>
 <label>Mês</label><div class="rctl"><select id="rm" onchange="relRender()"></select><button class="btn o" onclick="relMes(0)">Este mês</button><button class="btn o" onclick="relMes(-1)">Mês passado</button><button class="btn o" onclick="relCarregar()">Atualizar</button><button class="btn o" onclick="relCsv()">Exportar CSV</button></div>
 <div id="rOut" style="margin-top:20px"></div></div></div>
+
+<div id="tC" style="display:none"><div class="sec"><h2 class="pt">CLIENTES E VISITANTES</h2>
+<p class="rd">Quem entra no site, quem se cadastrou e quem já comprou. Visitantes sem cadastro aparecem como "Visitante".</p>
+<div class="rk" id="clk"></div>
+<div class="rctl" style="margin:16px 0"><input id="clq" placeholder="Buscar nome, telefone ou bairro" oninput="clRender()" style="margin:0"><select id="clf" onchange="clRender()"><option value="all">Todos</option><option value="cad">Cadastrados</option><option value="comp">Já compraram</option><option value="vis">Só visitantes</option></select><select id="clo" onchange="clRender()"><option value="vis">Mais recentes</option><option value="gasto">Quem mais gastou</option><option value="n">Mais visitas</option></select><button class="btn o" onclick="clCarregar()">Atualizar</button><button class="btn o" onclick="clCsv()">Exportar CSV</button><button class="btn o" style="color:#e5484d;border-color:#e5484d" onclick="clApagarTodos()">Apagar todos</button></div>
+<div style="overflow:auto"><table class="tb"><thead><tr><th>Quem</th><th>WhatsApp</th><th>Visitas</th><th>Última visita</th><th>Pedidos</th><th>Total gasto</th><th>Ações</th></tr></thead><tbody id="clb"></tbody></table></div></div></div>
 
 <div class="ov" id="cm" style="justify-content:center;align-items:center"><div class="pn" style="height:auto;max-width:360px;border:1px solid var(--line)"><h3 class="pt" style="margin-bottom:12px">AVISAR O CLIENTE?</h3><p id="cmP" style="color:var(--mut);margin-bottom:18px;font-size:14px"></p><button class="btn" style="width:100%;margin-bottom:8px" onclick="cmSim()">Sim, abrir WhatsApp</button><button class="btn o" style="width:100%" onclick="cmNao()">Não avisar agora</button></div></div>
 <div class="ov" id="ep" style="justify-content:center;align-items:center"><div class="pn" style="height:auto;max-width:380px;max-height:92vh;overflow:auto;border:1px solid var(--line)"><h3 class="pt" style="margin-bottom:12px">EDITAR PRODUTO</h3>
