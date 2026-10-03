@@ -24,7 +24,11 @@ let primeiro = true;
 
 // ── Som: bipe de verdade (3 toques) + vibração, para quando o painel está aberto ──
 let actx;
-document.addEventListener('click', () => { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {} }, { once: true });
+function destravar() {
+  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {}
+  if (window.Notification && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
+}
+['click', 'touchstart', 'keydown'].forEach(ev => document.addEventListener(ev, destravar, { once: true }));
 function beep() {
   try {
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
@@ -39,17 +43,29 @@ function beep() {
   } catch (e) {}
 }
 const OPC_NOTIF = { icon: 'icon-192.png', badge: 'icon-192.png', renotify: true, silent: false, requireInteraction: true, vibrate: [300, 150, 300, 150, 500] };
+// Alerta de pedido novo com o painel aberto: som, notificação do sistema e título piscando
+let ultimoAviso = 0, piscar = null;
+function piscarTitulo() {
+  if (piscar) return; const base = document.title; let on = false;
+  piscar = setInterval(() => { document.title = (on = !on) ? '🛍️ NOVO PEDIDO!' : base; }, 900);
+  const parar = () => { if (!document.hidden) { clearInterval(piscar); piscar = null; document.title = base; document.removeEventListener('visibilitychange', parar); window.removeEventListener('focus', parar); } };
+  document.addEventListener('visibilitychange', parar); window.addEventListener('focus', parar);
+}
+async function alertaPedido(titulo, corpo) {
+  ultimoAviso = Date.now(); beep(); piscarTitulo();
+  if (!window.Notification || Notification.permission !== 'granted') { avisoAdm('⚠ Notificação do sistema bloqueada: clique no cadeado ao lado do endereço e permita Notificações'); return; }
+  const o = { ...OPC_NOTIF, body: corpo, tag: 'pedido-' + Date.now() };
+  try { const reg = await navigator.serviceWorker.ready; await reg.showNotification(titulo, o); }
+  catch (e) { try { new Notification(titulo, o); } catch (_) {} }
+}
 // Push com o painel ABERTO: o Firebase não chama o service worker, então mostramos a notificação aqui
 let ouvindoPush = false;
 function ouvirPush() {
   if (ouvindoPush) return;
   try {
     firebase.messaging().onMessage(async m => {
-      const d = m.data || {}; beep();
-      if (window.Notification && Notification.permission === 'granted') {
-        const reg = await navigator.serviceWorker.ready;
-        reg.showNotification(d.title || 'Novo pedido', { ...OPC_NOTIF, body: d.body || '', tag: 'pedido-' + Date.now() });
-      }
+      const d = m.data || {};
+      setTimeout(() => { if (Date.now() - ultimoAviso > 8000) alertaPedido(d.title || 'Novo pedido', d.body || ''); }, 4000);
     });
     ouvindoPush = true;
   } catch (e) { console.error('ouvirPush:', e); }
@@ -63,7 +79,10 @@ function iniciar() {
   ouvirPush();
   db.collection('config').doc('loja').onSnapshot(s => { CFG = s.data() || {}; if (!ajInit) { ajInit = true; preencherAjustes(); } renderBairros(); });
   db.collection('pedidos').orderBy('criadoEm', 'desc').limit(100).onSnapshot(s => {
-    if (!primeiro && s.docChanges().some(c => c.type === 'added')) { const t = $('toast'); t.textContent = '🛍️ Novo pedido recebido!'; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 5000); beep(); }
+    if (!primeiro) s.docChanges().filter(c => c.type === 'added').forEach(c => {
+      const p = c.doc.data(), t = $('toast'); t.textContent = '🛍️ Novo pedido recebido!'; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 5000);
+      alertaPedido('🛍️ Novo pedido · ' + R$(p.total || 0), ((p.cliente && p.cliente.nome) || 'Cliente') + ' · ' + (p.pagamento || '') + ' · ' + (p.itens || []).map(i => i.nome + ' ' + i.tam + '×' + i.q).join(', '));
+    });
     primeiro = false;
     PED = {}; s.docs.forEach(x => PED[x.id] = x.data());
     $('peds').innerHTML = s.docs.map(d => { const p = d.data(), id = d.id, sc = STIDX[p.status] ?? 0, ent = p.entrega, end = ent && ent.endereco;
@@ -502,11 +521,22 @@ async function testarAvisos() {
   ok(!!LOJA.vapidKey, 'vapidKey preenchida no config.js');
   try { const n = (await db.collection('admTokens').get()).size; ok(n > 0, 'Aparelhos registrados em admTokens: ' + n + (n ? '' : ' → clique em 🔔 Ativar avisos')); }
   catch (e) { ok(false, 'Sem acesso a admTokens (' + e.code + ') → ajuste o firestore.rules'); }
-  beep();
+  beep(); piscarTitulo();
   if (window.Notification && Notification.permission === 'granted' && sw) {
     try { await sw.showNotification('🔧 Teste de aviso', { ...OPC_NOTIF, body: 'Se você viu e ouviu isto, o aparelho está pronto.', tag: 'teste' }); ok(true, 'Notificação de teste enviada (deve aparecer agora, com som)'); }
     catch (e) { ok(false, 'Falha ao mostrar notificação: ' + e.message); }
   }
+  // Teste ponta a ponta: pede ao servidor para enviar um push de verdade
+  avisoAdm('Testando o servidor...');
+  try {
+    const ref = await db.collection('admTestes').add({ em: firebase.firestore.FieldValue.serverTimestamp() });
+    const res = await new Promise(r => { const off = ref.onSnapshot(s => { const d = s.data(); if (d && d.resultado) { off(); r(d.resultado); } }); setTimeout(() => { off(); r(null); }, 15000); });
+    if (!res) ok(false, 'O servidor não respondeu em 15 s → a função "testePush" não está publicada ou está em outra região (veja REGIAO no index.js e rode firebase deploy --only functions)');
+    else if (res.erro) ok(false, 'Servidor tentou enviar e deu erro: ' + res.erro);
+    else if (!res.aparelhos) ok(false, 'Servidor respondeu, mas não há aparelho registrado → clique em 🔔 Ativar avisos');
+    else ok(res.ok > 0, 'Servidor enviou push: ' + res.ok + ' ok, ' + res.falhas + ' falha(s)' + (res.ok > 0 ? ' → ele deve chegar em instantes (com a aba aberta, aparece com som; fechada, vem do sistema)' : ' → o aparelho registrado expirou; clique em 🔔 Ativar avisos de novo'));
+    ref.delete().catch(() => {});
+  } catch (e) { ok(false, 'Não consegui pedir o teste ao servidor (' + (e.code || e.message) + ') → publique o firestore.rules novo'); }
   L.push('', 'Se tudo está ✅ e o pedido de teste não avisa, olhe Firebase → Functions → Logs de "novoPedido".');
   alert(L.join('\n'));
 }
