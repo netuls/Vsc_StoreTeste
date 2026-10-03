@@ -76,7 +76,7 @@ auth.onAuthStateChanged(u => {
   if (ok) iniciar();
 });
 function iniciar() {
-  ouvirPush(); criarBotaoVenda();
+  ouvirPush(); ajustarLayout(); criarBotaoVenda();
   db.collection('config').doc('loja').onSnapshot(s => { CFG = s.data() || {}; if (!ajInit) { ajInit = true; preencherAjustes(); } renderBairros(); });
   db.collection('pedidos').orderBy('criadoEm', 'desc').limit(100).onSnapshot(s => {
     if (!primeiro) s.docChanges().filter(c => c.type === 'added').forEach(c => {
@@ -617,5 +617,15 @@ async function salvarVendaManual() {
   } catch (e) {
     if (ref) await ref.delete().catch(() => {});   // não deixa venda pela metade
     btn.disabled = false; alert('Não foi possível registrar a venda: ' + e.message);
+  }
+}
+
+// ── Layout: a tabela de pedidos não pode ser cortada na lateral (telas largas) ──
+function ajustarLayout() {
+  const tb = $('peds') && $('peds').closest('table'); if (!tb || window.innerWidth <= 900) return;
+  for (let el = tb.parentElement; el && el !== document.body; el = el.parentElement) {
+    const cs = getComputedStyle(el), mw = parseFloat(cs.maxWidth);
+    if (mw && mw < 1400) el.style.maxWidth = 'min(1400px, 96vw)';   // alarga o painel para caberem todos os botões
+    if (cs.overflowX === 'hidden') el.style.overflowX = 'auto';      // se ainda faltar espaço, rola em vez de cortar
   }
 }
