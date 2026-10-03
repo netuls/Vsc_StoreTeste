@@ -1,0 +1,326 @@
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const STIDX = { 'Novo': 0, 'Aguardando conferência': 1, 'Confirmado': 2, 'Em separação': 3, 'Saiu para entrega': 4, 'Entregue': 5, 'Cancelado': 6 };
+const MSG_ST = ['Confirmado', 'Em separação', 'Saiu para entrega', 'Entregue', 'Cancelado'];
+const ASSINATURA = '\n\n_VSC STORE · Elegância em cada peça_';
+const MSG_PAD = {
+  'Novo': 'Olá, {nome}! Recebemos o seu pedido nº {pedido} na VSC STORE.\n\n*Total:* {total}\n\nEm breve entraremos em contato para dar andamento.',
+  'Aguardando conferência': 'Olá, {nome}! Recebemos o seu pedido nº {pedido} na VSC STORE e estamos conferindo o pagamento.\n\n*Total:* {total}\n\nAssim que for confirmado, avisaremos por aqui.',
+  'Confirmado': 'Olá, {nome}! Seu pedido nº {pedido} foi confirmado. Agradecemos a preferência pela VSC STORE.\n\n{detalhes}\n*Total:* {total}',
+  'Em separação': 'Olá, {nome}! Seu pedido nº {pedido} está em separação. Estamos preparando tudo com cuidado e avisaremos assim que ele sair para entrega.',
+  'Saiu para entrega': 'Olá, {nome}! Seu pedido nº {pedido} saiu para entrega e chegará até você em breve. Pedimos que fique atento ao recebimento.',
+  'Entregue': 'Olá, {nome}! Seu pedido nº {pedido} foi entregue. Agradecemos a confiança na VSC STORE e esperamos que você aproveite cada peça.',
+  'Cancelado': 'Olá, {nome}. Informamos que o seu pedido nº {pedido} foi cancelado. Em caso de dúvidas, estamos à disposição por aqui.' };
+// textos padrão antigos: se a mensagem salva for igual a um deles, passa a valer o novo padrão
+const MSG_OLD = {
+  'Confirmado': ['Olá, {nome}! Seu pedido na VSC STORE foi confirmado ✅ Total: {total}.', 'Olá, {nome}! Seu pedido na VSC STORE foi confirmado ✅\n\n{detalhes}\n\nTotal: {total}.'],
+  'Em separação': ['Olá, {nome}! Seu pedido está em separação 📦 Avisamos assim que sair.'],
+  'Saiu para entrega': ['Olá, {nome}! Seu pedido saiu para entrega 🚚 Fique atento, chega em breve!'],
+  'Entregue': ['Olá, {nome}! Pedido entregue 🖤 Obrigado por comprar na VSC STORE!'],
+  'Cancelado': ['Olá, {nome}. Seu pedido foi cancelado. Qualquer dúvida é só responder aqui.'] };
+const msgDe = k => { const m = CFG.msgs && CFG.msgs[k]; return (m && !(MSG_OLD[k] || []).includes(m)) ? m : MSG_PAD[k]; };
+let CFG = {}, ajInit = false, PED = {}, PROD = {}, logoNova;
+let primeiro = true;
+auth.onAuthStateChanged(u => {
+  const ok = u && u.email === LOJA.adminEmail;
+  $('login').style.display = ok ? 'none' : 'block'; $('app').style.display = ok ? 'block' : 'none';
+  if (ok) iniciar();
+});
+function iniciar() {
+  db.collection('config').doc('loja').onSnapshot(s => { CFG = s.data() || {}; if (!ajInit) { ajInit = true; preencherAjustes(); } });
+  db.collection('pedidos').orderBy('criadoEm', 'desc').limit(100).onSnapshot(s => {
+    if (!primeiro && s.docChanges().some(c => c.type === 'added')) { const t = $('toast'); t.textContent = '🛍️ Novo pedido recebido!'; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 5000); try { new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=').play(); } catch (e) {} }
+    primeiro = false;
+    PED = {}; s.docs.forEach(x => PED[x.id] = x.data());
+    $('peds').innerHTML = s.docs.map(d => { const p = d.data(), id = d.id, sc = STIDX[p.status] ?? 0, ent = p.entrega, end = ent && ent.endereco;
+      const entHtml = !ent ? '' : ent.tipo === 'Retirada' ? '<br><small>🏬 Retirada na loja</small>' : '<br><small>📍 <a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(txtEnd(end)) + '" target="_blank" rel="noopener" style="color:inherit">' + esc(end.rua) + ', ' + esc(end.numero) + (end.complemento ? ' (' + esc(end.complemento) + ')' : '') + ' - ' + esc(end.bairro) + ', ' + esc(end.cidade) + '</a>' + (end.ref ? '<br>Ref.: ' + esc(end.ref) : '') + '</small>';
+      const b = (txt, cls, st) => `<button class="ab ${cls}" ${p.status === st ? 'disabled' : ''} onclick="setStatus('${id}','${st}')">${txt}</button>`;
+      return `<tr><td data-l="Cliente"><b>${esc(p.cliente.nome)}</b><br><small style="color:var(--mut)">Pedido nº ${nPed(id)}</small>${entHtml}</td><td class="wa" data-l="WhatsApp">${esc(p.cliente.tel)}</td><td data-l="Itens"><small>${p.itens.map(i => esc(i.nome) + ' ' + esc(i.tam) + '×' + i.q).join('<br>')}</small></td>
+      <td data-l="Data">${p.criadoEm ? p.criadoEm.toDate().toLocaleString('pt-BR') : ''}</td><td data-l="Pagamento">${esc(p.pagamento)}</td><td data-l="Valor">${R$(p.total)}${p.frete ? '<br><small style="color:var(--mut)">frete ' + R$(p.frete) + '</small>' : ''}</td>
+      <td data-l="Status"><span class="st s${sc}">${esc(p.status)}</span></td>
+      <td class="acoes">${b('Confirmar', 'b', 'Confirmado')}${b('Em separação', 'p', 'Em separação')}${b('Saiu p/ entrega', 'c', 'Saiu para entrega')}${b('Entregue', 'g', 'Entregue')}${b('Cancelar', 'r', 'Cancelado')}
+      <button class="ab g" onclick="zap('${id}')">WhatsApp</button><button class="ab b" onclick="enviarPix('${id}')">Enviar Pix</button><button class="ab r" onclick="excluirPedido('${id}')">Excluir</button></td></tr>`; }).join('');
+  });
+  db.collection('produtos').onSnapshot(s => {
+    PROD = {}; s.docs.forEach(d => PROD[d.id] = d.data());
+    $('lista').innerHTML = s.docs.map(d => { const p = d.data(); return `<div class="card"><div class="im" style="background-image:url('${esc(p.img)}')"></div><div class="in"><h3>${esc(p.nome)}</h3><div class="pr">${precoHtml(p)} · ${esc(p.categoria)}</div>
+    <div class="szs" id="e${d.id}">${(p.tamanhos || ['Único']).map(t => `<div class="sz"><b>${esc(t)}</b><input type="number" min="0" inputmode="numeric" data-t="${esc(t)}" value="${p.estoque ? (p.estoque[t] ?? 0) : ''}" placeholder="∞"></div>`).join('')}</div>
+    <div style="display:flex;gap:6px;margin-bottom:8px"><button class="ab g" style="flex:1" onclick="salvarEstoque('${d.id}')">Salvar estoque</button><button class="ab r" onclick="esgotar('${d.id}')">Esgotar</button></div>
+    <button class="btn o" style="width:100%;margin-bottom:6px" onclick="editarProd('${d.id}')">Editar produto</button>
+    <button class="btn o" style="width:100%;margin-bottom:6px" onclick="trocarFotoProd('${d.id}')">Trocar foto</button>
+    <button class="btn o" style="width:100%;margin-bottom:6px" onclick="db.collection('produtos').doc('${d.id}').update({ativo:${!p.ativo}})">${p.ativo ? 'Ocultar' : 'Mostrar'}</button>
+    <button class="btn o" style="width:100%" onclick="if(confirm('Excluir?'))db.collection('produtos').doc('${d.id}').delete()">Excluir</button></div></div>`; }).join('');
+  });
+}
+function salvar() {
+  if (!pn.value || !pp.value) return alert('Informe nome e preço');
+  if (!fotoData && !confirm('Cadastrar sem foto?')) return;
+  const estoque = lerEstoque($('szs'), false); if (!Object.keys(estoque).length) return alert('Informe a quantidade em estoque de pelo menos um tamanho.');
+  const promo = +$('pm').value || 0; if (promo && promo >= +pp.value) return alert('O preço promocional precisa ser menor que o preço normal.');
+  db.collection('produtos').add({ nome: pn.value, preco: +pp.value, ...(promo ? { promo } : {}), categoria: pc.value, img: fotoData, tamanhos: TAMS.filter(t => t in estoque), estoque, ativo: true })
+    .then(() => { pn.value = pp.value = pf.value = $('pm').value = ''; fotoData = ''; $('prev').style.display = 'none'; document.querySelectorAll('#szs input').forEach(x => x.value = ''); });
+}
+
+// ── Notificação push: registra este aparelho para receber aviso de pedido novo ──
+async function ativarPush() {
+  try {
+    if (!LOJA.vapidKey) return alert('Preencha vapidKey no config.js (veja o passo a passo).');
+    if (await Notification.requestPermission() !== 'granted') return alert('Permita as notificações no navegador/celular.');
+    const reg = await navigator.serviceWorker.ready;
+    const token = await firebase.messaging().getToken({ vapidKey: LOJA.vapidKey, serviceWorkerRegistration: reg });
+    await db.collection('admTokens').doc(token).set({ em: firebase.firestore.FieldValue.serverTimestamp(), aparelho: navigator.userAgent.slice(0, 80) });
+    $('bPush').textContent = '🔔 Avisos ativos'; alert('Pronto! Este aparelho vai receber aviso de cada pedido novo.');
+  } catch (e) { alert('Não foi possível ativar: ' + e.message); }
+}
+if (window.Notification && Notification.permission === 'granted') window.addEventListener('load', () => { const b = $('bPush'); if (b) b.textContent = '🔔 Avisos ativos'; });
+
+const entrarAdmin = () => auth.signInWithEmailAndPassword(LOJA.adminEmail, $('s').value).catch(() => alert('Senha incorreta.'));
+
+// ── Foto do produto: máxima qualidade (até 1200 px, JPEG alto) guardada junto do produto, sem Storage ──
+let fotoData = '';
+function processarFoto(f, cb) {
+  const img = new Image(), url = URL.createObjectURL(f);
+  img.onload = () => {
+    const k = Math.min(1, 1200 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+    let q = 0.92, d = c.toDataURL('image/jpeg', q);
+    while (d.length > 900000 && q > 0.5) { q -= 0.07; d = c.toDataURL('image/jpeg', q); }   // limite de ~1 MB por documento do Firestore
+    URL.revokeObjectURL(url); cb(d);
+  };
+  img.onerror = () => alert('Não foi possível ler esta imagem.');
+  img.src = url;
+}
+function lerFoto(inp) {
+  const f = inp.files[0]; if (!f) return;
+  processarFoto(f, d => { fotoData = d; const p = $('prev'); p.src = d; p.style.display = 'block'; });
+}
+function trocarFotoProd(id) {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = () => { const f = inp.files[0]; if (f) processarFoto(f, d => db.collection('produtos').doc(id).update({ img: d }).then(() => avisoAdm('Foto trocada'), e => alert('Erro ao salvar: ' + e.message))); };
+  inp.click();
+}
+
+// ── Ações do pedido e WhatsApp para o cliente ──
+// ── Status do pedido + estoque ──
+// Ao confirmar (ou avançar) o pedido, as peças saem do estoque; ao cancelar, voltam. Tudo numa transação: se faltar peça, nada muda.
+const CONF = ['Confirmado', 'Em separação', 'Saiu para entrega', 'Entregue'];
+async function mudarStatus(id, st) {
+  const ref = db.collection('pedidos').doc(id);
+  await db.runTransaction(async t => {
+    const ps = await t.get(ref); if (!ps.exists) throw new Error('Pedido não encontrado.');
+    const p = ps.data(), upd = { status: st };
+    if (p.estoqueBaixado !== undefined) {   // pedidos antigos (de antes deste controle) só mudam de status
+      const quer = CONF.includes(st), baixado = !!p.estoqueBaixado;
+      if (quer !== baixado) {
+        const ids = [...new Set((p.itens || []).map(i => i.id))];
+        const snaps = await Promise.all(ids.map(x => t.get(db.collection('produtos').doc(x))));
+        for (const sp of snaps) {
+          if (!sp.exists || !sp.data().estoque) continue;   // produto apagado ou com estoque ilimitado
+          const mapa = { ...sp.data().estoque };
+          for (const i of (p.itens || []).filter(i => i.id === sp.id)) {
+            const tem = mapa[i.tam] ?? 0;
+            if (quer && tem < i.q) throw new Error('Estoque insuficiente: "' + i.nome + ' ' + i.tam + '" (tem ' + tem + ', o pedido pede ' + i.q + '). O status não foi alterado.');
+            mapa[i.tam] = quer ? tem - i.q : tem + i.q;
+          }
+          t.update(sp.ref, { estoque: mapa });
+        }
+        upd.estoqueBaixado = quer;
+      }
+    }
+    t.update(ref, upd);
+  });
+}
+// Antes de confirmar, confere se o pedido é coerente (a loja não tem servidor: esta é a trava contra pedido adulterado)
+function conferirPedido(id, st) {
+  const p = PED[id]; if (!CONF.includes(st) || p.estoqueBaixado !== false) return true;   // já conferido antes, ou pedido antigo
+  const itens = p.itens || [], c = x => Math.round((x || 0) * 100);
+  if (itens.reduce((a, i) => a + c(i.preco) * i.q, 0) + c(p.frete) !== c(p.total)) { alert('⚠ O total deste pedido (' + R$(p.total) + ') não bate com a soma dos itens + frete. Não confirme; confira com o cliente.'); return false; }
+  const av = [];
+  itens.forEach(i => { const pr = PROD[i.id]; if (pr) { const atual = emPromo(pr) ? pr.promo : pr.preco; if (Math.abs(atual - i.preco) > 0.004) av.push(i.nome + ': pedido a ' + R$(i.preco) + ', preço atual ' + R$(atual)); } });
+  if (p.entrega && p.entrega.tipo === 'Entrega') {
+    const sub = itens.reduce((a, i) => a + i.preco * i.q, 0), esp = (CFG.freteGratis > 0 && sub >= CFG.freteGratis) ? 0 : (+CFG.frete || 0);
+    if (Math.abs((p.frete || 0) - esp) > 0.004) av.push('Frete: pedido com ' + R$(p.frete || 0) + ', esperado ' + R$(esp));
+  }
+  return av.length ? confirm('⚠ Este pedido tem diferenças em relação ao painel:\n\n- ' + av.join('\n- ') + '\n\n(Pode ser só uma mudança de preço feita depois do pedido.) Confirmar mesmo assim?') : true;
+}
+let cmPend = null;
+async function setStatus(id, st) {
+  if (!conferirPedido(id, st)) return;
+  try { await mudarStatus(id, st); } catch (e) { return alert(e.message); }
+  const p = PED[id]; if (!MSG_ST.includes(st) || !(p.cliente.tel || '').replace(/\D/g, '')) return;
+  cmPend = { id, st }; $('cmP').textContent = 'Status salvo: "' + st + '" (pedido de ' + p.cliente.nome + '). Abrir o WhatsApp com a mensagem pronta?'; $('cm').classList.add('on');
+}
+function cmNao() { $('cm').classList.remove('on'); }
+function cmSim() { $('cm').classList.remove('on'); zap(cmPend.id, cmPend.st); }
+async function excluirPedido(id) {
+  const p = PED[id]; if (!confirm('Excluir este pedido?')) return;
+  try {
+    if (p.estoqueBaixado && confirm('As peças deste pedido já saíram do estoque. Devolver ao estoque?\n\nOK = devolver  ·  Cancelar = não devolver')) await mudarStatus(id, 'Cancelado');
+    await db.collection('pedidos').doc(id).delete();
+  } catch (e) { alert('Erro: ' + e.message); }
+}
+const nPed = id => { const n = (PED[id] || {}).numero; return n ? String(n).padStart(2, '0') : id.slice(0, 6).toUpperCase(); };   // pedidos antigos, sem número sequencial, mostram o código antigo
+const txtEnd = e => e.rua + ', ' + e.numero + (e.complemento ? ' (' + e.complemento + ')' : '') + ' - ' + e.bairro + ', ' + e.cidade + (e.cep ? ' · CEP ' + e.cep : '');
+function detalhesPedido(p) {
+  const ent = p.entrega, entTxt = !ent ? '' : ent.tipo === 'Retirada' ? '\n\n*Retirada na loja*' : '\n\n*Entrega*\n' + txtEnd(ent.endereco) + (p.frete ? '\n*Frete:* ' + R$(p.frete) : '');
+  return '*Resumo do pedido*\n' + p.itens.map(i => i.q + '× ' + i.nome + ' (' + i.tam + ') — ' + R$(i.preco * i.q)).join('\n') + entTxt + '\n\n*Pagamento:* ' + p.pagamento + '\n';
+}
+function zap(id, stNovo) {
+  const p = PED[id], tel = (p.cliente.tel || '').replace(/\D/g, ''); if (!tel) return alert('Pedido sem telefone.');
+  const st = stNovo || p.status;
+  let t = msgDe(st) || MSG_PAD['Novo'];
+  // Só na confirmação vão os detalhes do pedido (se a mensagem salva não tiver {detalhes}, eles entram no final)
+  if (st === 'Confirmado') t = t.includes('{detalhes}') ? t : t + '\n\n{detalhes}';
+  else t = t.replace(/\{detalhes\}/g, '');
+  t = t.replace(/\{detalhes\}/g, detalhesPedido(p)).replace(/\{nome\}/g, (p.cliente.nome || '').split(' ')[0]).replace(/\{total\}/g, R$(p.total)).replace(/\{pedido\}/g, nPed(id)).trim() + ASSINATURA;
+  window.open('https://wa.me/55' + tel + '?text=' + encodeURIComponent(t), '_blank');
+}
+
+// ── Ajustes da loja: WhatsApp, logo do site e mensagens ──
+const mid = k => 'm-' + k.replace(/\W/g, '_');
+function preencherAjustes() {
+  const px = CFG.pix || {};
+  $('pxt').value = px.tipo || 'cpf'; $('pxk').value = px.chave || ''; $('pxn').value = px.nome || ''; $('pxc').value = px.cidade || '';
+  $('aw').value = (CFG.whatsapp || '').replace(/^55/, ''); $('ar').value = CFG.reiniciar || 'nunca'; $('afr').value = CFG.frete || ''; $('afg').value = CFG.freteGratis || '';
+  if (CFG.logo) { $('alogo').src = CFG.logo; $('alogo').style.display = 'block'; }
+  $('amsgs').innerHTML = MSG_ST.map(k => `<label>${k}</label><textarea id="${mid(k)}" rows="2">${esc(msgDe(k))}</textarea>`).join('');
+}
+function lerLogo(inp) {
+  const f = inp.files[0]; if (!f) return; const img = new Image(), url = URL.createObjectURL(f);
+  img.onload = () => { const k = Math.min(1, 480 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    logoNova = c.toDataURL('image/png'); URL.revokeObjectURL(url); $('alogo').src = logoNova; $('alogo').style.display = 'block'; };
+  img.onerror = () => alert('Não foi possível ler esta imagem.'); img.src = url;
+}
+function tirarLogo() { logoNova = ''; $('alogo').style.display = 'none'; $('af').value = ''; }
+async function salvarAjustes() {
+  let w = $('aw').value.replace(/\D/g, ''); if (w && w.length <= 11) w = '55' + w;
+  if (w && !/^55\d{10,11}$/.test(w)) return alert('WhatsApp inválido: use DDD + número.');
+  const msgs = {}; MSG_ST.forEach(k => msgs[k] = $(mid(k)).value.trim() || MSG_PAD[k]);
+  const frete = Math.max(0, +$('afr').value || 0), freteGratis = Math.max(0, +$('afg').value || 0);
+  const dados = { whatsapp: w, msgs, reiniciar: $('ar').value, frete, freteGratis };
+  if (logoNova !== undefined) dados.logo = logoNova || firebase.firestore.FieldValue.delete();
+  try { await db.collection('config').doc('loja').set(dados, { merge: true }); logoNova = undefined; alert('Ajustes salvos!'); } catch (e) { alert('Erro ao salvar: ' + e.message); }
+}
+
+// ── Pix ──
+async function salvarPix() {
+  const tipo = $('pxt').value; let chave = $('pxk').value.trim();
+  const nome = $('pxn').value.trim(), cidade = $('pxc').value.trim();
+  if (!chave || !nome || !cidade) return alert('Preencha a chave, o nome do recebedor e a cidade.');
+  if (tipo === 'cpf') chave = chave.replace(/\D/g, '');
+  if (tipo === 'tel') { chave = chave.replace(/\D/g, ''); if (chave.length <= 11) chave = '55' + chave; chave = '+' + chave; }
+  if (tipo === 'email') chave = chave.toLowerCase();
+  if (tipo === 'cpf' && ![11, 14].includes(chave.length)) return alert('CPF deve ter 11 dígitos ou CNPJ 14.');
+  try { await db.collection('config').doc('loja').set({ pix: { tipo, chave, nome, cidade } }, { merge: true }); $('pxk').value = chave; alert('Pix salvo!'); }
+  catch (e) { alert('Erro ao salvar: ' + e.message); }
+}
+function enviarPix(id) {
+  const px = CFG.pix; if (!px || !px.chave) return alert('Cadastre sua chave Pix no painel PIX primeiro.');
+  const p = PED[id], tel = (p.cliente.tel || '').replace(/\D/g, ''); if (!tel) return alert('Pedido sem telefone.');
+  const code = gerarPix(px.chave, px.nome, px.cidade, p.total, id);
+  const t = 'Olá, ' + (p.cliente.nome || '').split(' ')[0] + '! Segue o Pix referente ao seu pedido nº ' + nPed(id) + ' na VSC STORE.\n\n*Valor:* ' + R$(p.total) + '\n*Favorecido:* ' + px.nome + '\n\nPara pagar, copie o código abaixo e use a opção "Pix Copia e Cola" no aplicativo do seu banco:' + ASSINATURA + '\n\n' + code;
+  window.open('https://wa.me/55' + tel + '?text=' + encodeURIComponent(t), '_blank');
+}
+
+// ── Tamanhos e estoque ──
+const TAMS = ['P', 'M', 'G', 'GG', 'XG', 'Único', '36', '38', '40', '42', '44'];
+$('szs').innerHTML = TAMS.map(t => `<div class="sz"><b>${t}</b><input type="number" min="0" inputmode="numeric" data-t="${t}" placeholder="—"></div>`).join('');
+function lerEstoque(c, vazioZero) {
+  const e = {}; c.querySelectorAll('input[data-t]').forEach(i => { if (i.value !== '') e[i.dataset.t] = Math.max(0, parseInt(i.value) || 0); else if (vazioZero) e[i.dataset.t] = 0; }); return e;
+}
+function avisoAdm(m) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2500); }
+const salvarEstoque = id => db.collection('produtos').doc(id).update({ estoque: lerEstoque($('e' + id), true) }).then(() => avisoAdm('Estoque salvo'));
+function esgotar(id) { if (!confirm('Marcar todos os tamanhos como esgotados?')) return; const e = lerEstoque($('e' + id), true); Object.keys(e).forEach(k => e[k] = 0); db.collection('produtos').doc(id).update({ estoque: e }); }
+
+// ── Editar produto e promoção ──
+const emPromo = p => p.promo > 0 && p.promo < p.preco;
+const precoHtml = p => emPromo(p) ? '<s style="color:var(--mut)">' + R$(p.preco) + '</s> <b>' + R$(p.promo) + '</b>' : R$(p.preco);
+let prodEd = null;
+function editarProd(id) {
+  const p = PROD[id]; if (!p) return; prodEd = id;
+  $('epN').value = p.nome || ''; $('epP').value = p.preco ?? ''; $('epPm').value = emPromo(p) ? p.promo : ''; $('epC').value = p.categoria || '';
+  $('ep').classList.add('on');
+}
+const fecharProd = () => { $('ep').classList.remove('on'); prodEd = null; };
+async function salvarProd() {
+  const nome = $('epN').value.trim(), preco = +$('epP').value, promo = +$('epPm').value || 0, categoria = $('epC').value.trim();
+  if (!nome || !(preco > 0)) return alert('Informe nome e preço.');
+  if (promo && promo >= preco) return alert('O preço promocional precisa ser menor que o preço normal.');
+  try { await db.collection('produtos').doc(prodEd).update({ nome, preco, categoria, promo: promo || firebase.firestore.FieldValue.delete() }); fecharProd(); avisoAdm('Produto atualizado'); }
+  catch (e) { alert('Erro ao salvar: ' + e.message); }
+}
+
+// ── Relatórios ──
+const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const REC = ['Confirmado', 'Em separação', 'Saiu para entrega', 'Entregue'];   // status que contam como venda
+let POR = {};
+const mkey = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+const mnome = k => { const [y, m] = k.split('-'); return MESES[m - 1] + ' de ' + y; };
+const mesAnt = k => { const [y, m] = k.split('-').map(Number); return mkey(new Date(y, m - 2, 1)); };
+const ult12 = () => { const h = new Date(), r = []; for (let i = 0; i < 12; i++) r.push(mkey(new Date(h.getFullYear(), h.getMonth() - i, 1))); return r; };   // do mês atual para trás
+
+function aba(t) {
+  $('tP').style.display = t === 'P' ? 'block' : 'none'; $('tR').style.display = t === 'R' ? 'block' : 'none';
+  $('tbP').classList.toggle('on', t === 'P'); $('tbR').classList.toggle('on', t === 'R');
+  if (t === 'R') relCarregar();
+}
+async function relCarregar() {
+  const h = new Date(), ini = new Date(h.getFullYear(), h.getMonth() - 12, 1);   // 13 meses: dá para comparar o mês mais antigo com o anterior
+  try {
+    const s = await db.collection('pedidos').where('criadoEm', '>=', ini).get();
+    POR = {}; s.docs.forEach(d => { const p = d.data(); if (!p.criadoEm) return; const k = mkey(p.criadoEm.toDate()); (POR[k] = POR[k] || []).push(p); });
+  } catch (e) { return alert('Erro ao carregar relatórios: ' + e.message); }
+  const atual = $('rm').value;
+  $('rm').innerHTML = ult12().map(k => `<option value="${k}">${mnome(k)}</option>`).join('');
+  $('rm').value = atual && ult12().includes(atual) ? atual : mkey(h);
+  relRender();
+}
+function relMes(d) { const h = new Date(); $('rm').value = mkey(new Date(h.getFullYear(), h.getMonth() + d, 1)); relRender(); }
+function relSel(k) { $('rm').value = k; relRender(); window.scrollTo({ top: $('rOut').offsetTop - 80, behavior: 'smooth' }); }
+function relAgg(lista) {
+  const r = { receita: 0, pedidos: 0, itens: 0, cancel: 0, pend: 0, pag: {}, prod: {} };
+  lista.forEach(p => {
+    if (p.status === 'Cancelado') { r.cancel++; return; }
+    if (!REC.includes(p.status)) { r.pend++; return; }
+    const t = p.total || 0, f = p.pagamento || 'Outro';
+    r.receita += t; r.pedidos++;
+    r.pag[f] = r.pag[f] || { v: 0, n: 0 }; r.pag[f].v += t; r.pag[f].n++;
+    (p.itens || []).forEach(i => { r.itens += i.q; r.prod[i.nome] = r.prod[i.nome] || { v: 0, q: 0 }; r.prod[i.nome].v += i.preco * i.q; r.prod[i.nome].q += i.q; });
+  });
+  return r;
+}
+const barra = (rot, sub, v, max, extra, cls, key) => `<div class="rb${key ? ' clk' : ''} ${cls || ''}"${key ? ` onclick="relSel('${key}')"` : ''}><div class="rt"><b>${rot}</b><span>${R$(v)}${extra || ''}</span></div><div class="rbar"><i style="width:${max > 0 ? Math.max(2, v / max * 100) : 0}%"></i></div><small>${sub}</small></div>`;
+function relRender() {
+  const k = $('rm').value; if (!k) return;
+  const mes = relAgg(POR[k] || []), ant = relAgg(POR[mesAnt(k)] || []), K12 = ult12();
+  const tudo = relAgg(K12.flatMap(m => POR[m] || []));
+  const varp = ant.receita > 0 ? Math.round((mes.receita - ant.receita) / ant.receita * 100) : null;
+  const fin = mes.pedidos + mes.cancel, tick = mes.pedidos ? mes.receita / mes.pedidos : 0;
+  const kpi = (t, v, s) => `<div class="rc"><small>${t}</small><b>${v}</b><i>${s}</i></div>`;
+  const ord = o => Object.entries(o).sort((a, b) => b[1].v - a[1].v);
+  const pagBars = (agg, destaque) => {
+    const l = ord(agg.pag), max = l.length ? l[0][1].v : 0, tot = agg.receita || 1;
+    return l.map(([n, x], i) => barra(esc(n) + (destaque && i === 0 ? '<em class="tg">mais lucrativa</em>' : ''), x.n + ' pedido(s) · ticket ' + R$(x.v / x.n), x.v, max, ' · ' + Math.round(x.v / tot * 100) + '%')).join('') || '<p class="rd">Sem vendas no período.</p>';
+  };
+  const prods = ord(mes.prod).slice(0, 8), pmax = prods.length ? prods[0][1].v : 0;
+  const vals = K12.map(m => relAgg(POR[m] || [])), mx = Math.max(...vals.map(v => v.receita));
+  $('rOut').innerHTML =
+    `<h3 class="pt" style="margin-bottom:10px">${mnome(k).toUpperCase()}</h3><div class="rk">`
+    + kpi('Receita total', R$(mes.receita), varp === null ? 'sem mês anterior para comparar' : (varp >= 0 ? '▲ ' : '▼ ') + Math.abs(varp) + '% vs mês anterior')
+    + kpi('Pedidos', mes.pedidos, 'confirmados') + kpi('Peças vendidas', mes.itens, 'unidades') + kpi('Ticket médio', R$(tick), 'por pedido')
+    + kpi('Cancelados', mes.cancel, fin ? Math.round(mes.cancel / fin * 100) + '% dos finalizados' : 'nenhum no mês') + kpi('Aguardando', mes.pend, 'ainda não confirmados') + `</div>`
+    + `<div class="rp"><h3>POR FORMA DE PAGAMENTO · ${mnome(k).toUpperCase()}</h3>${pagBars(mes)}</div>`
+    + `<div class="rp"><h3>FORMA DE PAGAMENTO · ÚLTIMOS 12 MESES</h3><p class="rd">Total de ${R$(tudo.receita)} em ${tudo.pedidos} pedido(s). Veja qual forma de pagamento mais rendeu.</p>${pagBars(tudo, true)}</div>`
+    + `<div class="rp"><h3>POR PRODUTO · ${mnome(k).toUpperCase()}</h3>${prods.map(([n, x]) => barra(esc(n), x.q + ' unidade(s)', x.v, pmax)).join('') || '<p class="rd">Sem vendas no período.</p>'}</div>`
+    + `<div class="rp"><h3>ÚLTIMOS 12 MESES</h3><p class="rd">Toque em um mês para ver o detalhe dele.</p>${K12.map((m, i) => barra(mnome(m), vals[i].pedidos + ' pedido(s)', vals[i].receita, mx, '', m === k ? 'sel' : '', m)).join('')}</div>`;
+}
+function relCsv() {
+  const k = $('rm').value, l = (POR[k] || []).slice().sort((a, b) => a.criadoEm.seconds - b.criadoEm.seconds);
+  if (!l.length) return alert('Não há pedidos neste mês.');
+  const c = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const linhas = [['Nº', 'Data', 'Cliente', 'Telefone', 'Itens', 'Entrega', 'Frete', 'Pagamento', 'Status', 'Total']].concat(l.map(p => [p.numero || '', p.criadoEm.toDate().toLocaleString('pt-BR'), p.cliente.nome, p.cliente.tel, (p.itens || []).map(i => i.nome + ' ' + i.tam + ' x' + i.q).join(' | '), p.entrega ? (p.entrega.tipo === 'Retirada' ? 'Retirada' : txtEnd(p.entrega.endereco)) : '', (p.frete || 0).toFixed(2).replace('.', ','), p.pagamento, p.status, (p.total || 0).toFixed(2).replace('.', ',')]));
+  const blob = new Blob(['\ufeff' + linhas.map(r => r.map(c).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'pedidos-' + k + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+}

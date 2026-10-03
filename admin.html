@@ -1,0 +1,53 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>VSC STORE · Admin</title><link rel="icon" href="logo-emblem.png"><link rel="manifest" href="manifest-admin.json"><meta name="theme-color" content="#09090a"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script></head><body class="adm">
+<header><a class="brand" href="admin.html"><img src="logo-emblem.png" alt="VSC"><span class="logo-t pt">PAINEL ADMIN</span></a><nav><button class="btn" id="bPush" onclick="ativarPush()">🔔 Ativar avisos</button><button class="btn o" onclick="auth.signOut()">Sair</button></nav></header>
+<div class="sec" id="login" style="max-width:380px"><h2 class="pt">ENTRAR</h2><label>Senha</label><input id="s" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')entrarAdmin()"><button class="btn" style="width:100%" onclick="entrarAdmin()">Entrar</button></div>
+<div id="app" style="display:none">
+<div class="tabs"><button class="on" id="tbP" onclick="aba('P')">Painel</button><button id="tbR" onclick="aba('R')">Relatórios</button></div>
+<div id="tP">
+<div class="sec"><h2 class="pt">PEDIDOS</h2><div style="overflow:auto"><table class="tb"><thead><tr><th>Cliente</th><th>WhatsApp</th><th>Itens</th><th>Data</th><th>Pagamento</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody id="peds"></tbody></table></div></div>
+<div class="sec"><h2 class="pt">AJUSTES DA LOJA</h2>
+<label>WhatsApp que recebe os pedidos (DDD + número)</label><input id="aw" type="tel" inputmode="tel" placeholder="85999998888">
+<label>Reiniciar a contagem dos pedidos (nº 01, 02, 03...)</label><select id="ar"><option value="nunca">Nunca (continua sempre)</option><option value="diario">Todo dia</option><option value="semanal">Toda semana (na segunda-feira)</option><option value="mensal">Todo mês</option></select>
+<button class="btn o" style="display:block;margin-bottom:18px" onclick="reiniciarContagem()">Reiniciar contagem agora (próximo pedido = 01)</button>
+<label>Taxa de entrega (R$) — deixe vazio ou 0 para não cobrar frete</label><input id="afr" type="number" step="0.01" min="0" inputmode="decimal" placeholder="10.00">
+<label>Frete grátis a partir de (R$) — opcional</label><input id="afg" type="number" step="0.01" min="0" inputmode="decimal" placeholder="200.00">
+<label>Logo do site do cliente</label><input id="af" type="file" accept="image/*" onchange="lerLogo(this)">
+<img id="alogo" alt="" style="display:none;max-height:90px;margin:0 0 12px;background:#000;border:1px solid var(--line)"><button class="btn o" style="display:block;margin-bottom:18px" onclick="tirarLogo()">Voltar para a logo padrão</button>
+<h3 style="font-size:14px;margin:6px 0 10px">Mensagens enviadas ao cliente (botão WhatsApp de cada pedido)</h3><p style="color:var(--mut);font-size:12px;margin-bottom:8px">Use {nome}, {total} e {pedido} (número do pedido). A assinatura da loja é adicionada automaticamente no final. Na mensagem de <b>Confirmado</b> também dá para usar {detalhes} (itens, tamanhos e pagamento); se não usar, os detalhes entram no final automaticamente. Os outros status não levam detalhes.</p>
+<div id="amsgs"></div><button class="btn" onclick="salvarAjustes()">Salvar ajustes</button></div>
+<div class="sec"><h2 class="pt">PIX</h2>
+<label>Tipo da chave</label><select id="pxt" style="width:100%;margin-bottom:12px;padding:10px"><option value="cpf">CPF / CNPJ</option><option value="tel">Telefone</option><option value="email">E-mail</option><option value="rand">Chave aleatória</option></select>
+<label>Chave Pix</label><input id="pxk" placeholder="Sua chave Pix">
+<label>Nome do recebedor (máx. 25 letras)</label><input id="pxn" maxlength="25" placeholder="VSC STORE">
+<label>Cidade (máx. 15 letras)</label><input id="pxc" maxlength="15" placeholder="Fortaleza">
+<button class="btn" onclick="salvarPix()">Salvar Pix</button></div>
+<div class="sec"><h2 class="pt">PRODUTOS</h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0 12px"><div><label>Nome</label><input id="pn"></div><div><label>Preço</label><input id="pp" type="number" step="0.01"></div><div><label>Preço promocional (opcional)</label><input id="pm" type="number" step="0.01"></div><div><label>Categoria</label><input id="pc" placeholder="Camisetas"></div><div><label>Foto da peça</label><input id="pf" type="file" accept="image/*" onchange="lerFoto(this)"><img id="prev" alt="" style="display:none;max-height:90px;margin:-4px 0 12px;border:1px solid var(--line)"></div></div>
+<label>Tamanhos e quantidade em estoque — preencha só os que você vende (0 = esgotado)</label><div class="szs" id="szs"></div>
+<button class="btn" onclick="salvar()">Cadastrar produto</button>
+<div class="grid" id="lista" style="margin-top:24px"></div></div></div>
+<div id="tR" style="display:none"><div class="sec"><h2 class="pt">RELATÓRIOS</h2>
+<p class="rd">Vendas por mês, por forma de pagamento e por produto. Entram na receita os pedidos <b>confirmados</b>, em separação, saiu para entrega e entregues. Cancelados e pedidos ainda não confirmados (inclusive Pix aguardando conferência) ficam de fora.</p>
+<label>Mês</label><div class="rctl"><select id="rm" onchange="relRender()"></select><button class="btn o" onclick="relMes(0)">Este mês</button><button class="btn o" onclick="relMes(-1)">Mês passado</button><button class="btn o" onclick="relCarregar()">Atualizar</button><button class="btn o" onclick="relCsv()">Exportar CSV</button></div>
+<div id="rOut" style="margin-top:20px"></div></div></div>
+
+<div class="ov" id="cm" style="justify-content:center;align-items:center"><div class="pn" style="height:auto;max-width:360px;border:1px solid var(--line)"><h3 class="pt" style="margin-bottom:12px">AVISAR O CLIENTE?</h3><p id="cmP" style="color:var(--mut);margin-bottom:18px;font-size:14px"></p><button class="btn" style="width:100%;margin-bottom:8px" onclick="cmSim()">Sim, abrir WhatsApp</button><button class="btn o" style="width:100%" onclick="cmNao()">Não avisar agora</button></div></div>
+<div class="ov" id="ep" style="justify-content:center;align-items:center"><div class="pn" style="height:auto;max-width:380px;max-height:92vh;overflow:auto;border:1px solid var(--line)"><h3 class="pt" style="margin-bottom:12px">EDITAR PRODUTO</h3>
+<label>Nome</label><input id="epN"><label>Preço</label><input id="epP" type="number" step="0.01" inputmode="decimal">
+<label>Preço promocional (deixe vazio se não estiver em promoção)</label><input id="epPm" type="number" step="0.01" inputmode="decimal"><label>Categoria</label><input id="epC">
+<button class="btn" style="width:100%;margin-bottom:8px" onclick="salvarProd()">Salvar</button><button class="btn o" style="width:100%" onclick="fecharProd()">Cancelar</button></div></div>
+<div class="toast" id="toast"></div><script src="config.js"></script><script src="pix.js"></script><script src="admin.js"></script>
+<script>
+async function reiniciarContagem() {
+  if (!confirm('Reiniciar a contagem? O próximo pedido será o nº 01.')) return;
+  try {
+    await db.collection('config').doc('contador').set({ n: 0, p: 'reset-' + Date.now() });
+    alert('Contagem reiniciada. O próximo pedido será o nº 01.');
+  } catch (e) { alert('Erro ao reiniciar: ' + e.message); }
+}
+</script></body></html>

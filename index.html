@@ -1,0 +1,21 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>VSC STORE</title><link rel="icon" href="logo-emblem.png"><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#09090a"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script></head><body>
+<header><a class="brand" href="./"><img src="logo-emblem.png" alt="VSC"><span class="logo-t pt">VSC STORE</span></a><nav><button class="btn o" id="bConta" onclick="abrir('pConta')">Entrar</button><button class="btn" onclick="abrir('pCarrinho')">Sacola (<span id="qtd">0</span>)</button></nav></header>
+<div class="hero"><img src="logo-full.png" alt="VSC STORE"><p>Elegância em cada peça</p></div>
+<div class="sec"><h2 class="pt">COLEÇÃO</h2><div class="cats" id="cats"></div><div class="grid" id="grid"></div></div>
+
+<div class="ov" id="pCarrinho"><div class="pn"><h2 class="pt">SUA SACOLA</h2><div id="itens"></div><p style="margin:16px 0;font-size:18px">Total: <b id="tot">R$ 0,00</b></p>
+<label>Forma de pagamento</label><div class="fp" id="fp"><div data-f="Pix" class="on">Pix</div><div data-f="Cartão">Cartão</div><div data-f="Dinheiro">Dinheiro</div></div>
+<div id="pixBox" style="text-align:center"></div>
+<button class="btn" style="width:100%" onclick="finalizar()">Finalizar pedido</button><button class="btn o" style="width:100%;margin-top:8px" onclick="fechar()">Continuar comprando</button></div></div>
+
+<div class="ov" id="pConta"><div class="pn"><div id="fLogin"><h2 class="pt">SEUS DADOS</h2><p style="color:var(--mut);margin-bottom:14px;font-size:13px">Só precisamos disso para identificar o seu pedido.</p>
+<label>Nome</label><input id="cNome" autocomplete="given-name"><label>Sobrenome</label><input id="cSob" autocomplete="family-name"><label>Telefone / WhatsApp</label><input id="cTel" type="tel" inputmode="tel" placeholder="(85) 99999-8888" autocomplete="tel">
+<button class="btn" style="width:100%" onclick="salvarDados()">Salvar</button></div>
+<div id="fPedidos" style="display:none"><h2 class="pt">MEUS PEDIDOS</h2><div id="meus"></div><button class="btn o" style="width:100%;margin-top:16px" onclick="editarDados()">Editar meus dados</button></div>
+<button class="btn o" style="width:100%;margin-top:8px" onclick="fechar()">Fechar</button></div></div>
+<div class="toast" id="toast"></div><script src="config.js"></script><script src="pix.js"></script><script src="app.js"></script></body></html>

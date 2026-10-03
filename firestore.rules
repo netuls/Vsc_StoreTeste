@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function admin() { return request.auth != null && request.auth.token.email == 'admin@vscstore.com'; } // mesmo e-mail do config.js
+    match /produtos/{id} { allow read: if true; allow write: if admin(); }
+    match /admTokens/{t} { allow read, write: if admin(); }
+    match /clientes/{uid} { allow read, write: if request.auth != null && (request.auth.uid == uid || admin()); }
+    match /pedidos/{id} {
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow read: if request.auth != null && (resource.data.uid == request.auth.uid || admin());
+      allow update, delete: if admin();
+    }
+  }
+}
