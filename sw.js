@@ -5,7 +5,7 @@ try {
   firebase.messaging().onBackgroundMessage(m => {
     const d = m.data || {};
     return self.registration.showNotification(d.title || 'Novo pedido', {
-      body: d.body || '', icon: 'icon-192.png', badge: 'icon-192.png',
+      body: d.body || '', icon: 'icon-192.png', badge: 'badge.png',
       tag: 'pedido-' + Date.now(),          // tag única: cada pedido gera um aviso novo, com som
       renotify: true, silent: false,         // garante o som padrão do sistema
       requireInteraction: true,              // fica na tela até você tocar
@@ -22,7 +22,7 @@ self.addEventListener('notificationclick', e => {
   }));
 });
 
-const V = 'vsc-v4', SHELL = ['./', 'index.html', 'admin.html', 'style.css', 'app.js', 'admin.js', 'config.js', 'logo-emblem.png', 'logo-full.png', 'icon-192.png', 'icon-512.png'];
+const V = 'vsc-v5', SHELL = ['./', 'index.html', 'admin.html', 'style.css', 'app.js', 'admin.js', 'config.js', 'logo-emblem.png', 'logo-full.png', 'icon-192.png', 'icon-512.png', 'badge.png'];
 self.addEventListener('install', e => {
   // Se algum arquivo falhar, não derruba a instalação do service worker (o push continua funcionando)
   e.waitUntil(caches.open(V).then(c => Promise.all(SHELL.map(u => c.add(u).catch(err => console.warn('SW cache falhou:', u, err))))));
