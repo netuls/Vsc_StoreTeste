@@ -31,16 +31,30 @@ function renderLoja() {
     const tag = off ? '<span class="tag">Esgotado</span>' : (tot <= 3 ? '<span class="tag">Últimas unidades</span>' : (emPromo(p) ? '<span class="tag">Promoção</span>' : ''));
     return `<div class="card${off ? ' off' : ''}"><div class="im" style="background-image:url('${esc(p.img)}')">${tag}</div><div class="in"><h3>${esc(p.nome)}</h3><div class="pr">${emPromo(p) ? `<s style="color:var(--mut);font-size:.8em;font-weight:400;margin-right:6px">${R$(p.preco)}</s>${R$(precoAtual(p))}` : R$(p.preco)}</div>
     <div class="tam" id="t${p.id}">${ts.map((t, i) => `<b class="${i === first ? 'on' : ''}${estq(p, t) <= 0 ? ' x' : ''}" ${estq(p, t) > 0 ? 'onclick="selTam(this)"' : ''}>${esc(t)}</b>`).join('')}</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin:0 0 10px"><button class="btn o" style="padding:6px 16px" ${off ? 'disabled' : ''} onclick="maisMenos('${p.id}',-1)" aria-label="Diminuir">−</button><b id="q${p.id}" style="min-width:26px;text-align:center;font-size:16px">${QTD[p.id] || 1}</b><button class="btn o" style="padding:6px 16px" ${off ? 'disabled' : ''} onclick="maisMenos('${p.id}',1)" aria-label="Aumentar">+</button></div>
     <button class="btn" ${off ? 'disabled' : ''} onclick="add('${p.id}')">${off ? 'Indisponível' : 'Adicionar'}</button></div></div>`;
   }).join('') || '<p style="color:var(--mut)">Nenhuma peça disponível ainda.</p>';
 }
+let QTD = {};   // quantidade escolhida em cada peça (antes de adicionar à sacola)
+function maisMenos(id, d) {
+  const n = Math.min(20, Math.max(1, (QTD[id] || 1) + d)); QTD[id] = n;
+  const el = $('q' + id); if (el) el.textContent = n;
+}
 function add(id) {
-  const p = prods.find(x => x.id === id), el = document.querySelector(`#t${id} b.on`);
+  const p = prods.find(x => x.id === id), el = document.querySelector(`#t${id} b.on`), n = QTD[id] || 1;
   if (!el) return aviso('Escolha um tamanho disponível');
-  const tam = el.textContent, it = cart.find(c => c.id === id && c.tam === tam), q = estq(p, tam);
-  if ((it ? it.q : 0) + 1 > q) return aviso(q <= 0 ? 'Tamanho esgotado' : 'Só temos ' + q + ' unidade(s) deste tamanho');
-  it ? it.q++ : cart.push({ id, nome: p.nome, preco: precoAtual(p), tam, q: 1 });
-  $('qtd').textContent = cart.reduce((a, c) => a + c.q, 0); aviso('Adicionado à sacola');
+  const tam = el.textContent, it = cart.find(c => c.id === id && c.tam === tam), q = estq(p, tam), tem = it ? it.q : 0;
+  if (tem + n > q) return aviso(q <= 0 ? 'Tamanho esgotado' : tem ? 'Você já tem ' + tem + ' na sacola e só temos ' + q + ' unidade(s) deste tamanho' : 'Só temos ' + q + ' unidade(s) deste tamanho');
+  it ? it.q += n : cart.push({ id, nome: p.nome, preco: precoAtual(p), tam, q: n });
+  QTD[id] = 1; const e = $('q' + id); if (e) e.textContent = 1;
+  $('qtd').textContent = cart.reduce((a, c) => a + c.q, 0); aviso(n > 1 ? n + ' peças adicionadas à sacola' : 'Adicionado à sacola');
+}
+// + e − direto na sacola
+function mudaQ(i, d) {
+  const c = cart[i]; if (!c) return; const p = prods.find(x => x.id === c.id);
+  if (d > 0 && p && c.q + 1 > estq(p, c.tam)) return aviso('Só temos ' + estq(p, c.tam) + ' unidade(s) deste tamanho');
+  c.q += d; if (c.q <= 0) cart.splice(i, 1);
+  $('qtd').textContent = cart.reduce((a, x) => a + x.q, 0); renderCarrinho();
 }
 
 // ── Totais: subtotal + frete (o servidor confere tudo de novo ao criar o pedido) ──
@@ -161,7 +175,7 @@ function renderResumo() {
 }
 function renderCarrinho() {
   montarEntrega(); montarBairros(); preencherEnd();
-  $('itens').innerHTML = cart.map((c, i) => `<div class="li"><span>${esc(c.nome)} · ${esc(c.tam)} × ${c.q}</span><span>${R$(c.preco * c.q)} <a href="#" onclick="cart.splice(${i},1);renderCarrinho();$('qtd').textContent=cart.reduce((a,c)=>a+c.q,0);return false" style="color:var(--mut)">✕</a></span></div>`).join('') || '<p style="color:var(--mut)">Sacola vazia.</p>';
+  $('itens').innerHTML = cart.map((c, i) => `<div class="li"><span>${esc(c.nome)} · ${esc(c.tam)}<br><span style="display:inline-flex;align-items:center;gap:12px;margin-top:6px"><a href="#" onclick="mudaQ(${i},-1);return false" style="font-size:18px;padding:0 6px" aria-label="Diminuir">−</a><b>${c.q}</b><a href="#" onclick="mudaQ(${i},1);return false" style="font-size:18px;padding:0 6px" aria-label="Aumentar">+</a></span></span><span>${R$(c.preco * c.q)} <a href="#" onclick="cart.splice(${i},1);renderCarrinho();$('qtd').textContent=cart.reduce((a,c)=>a+c.q,0);return false" style="color:var(--mut)">✕</a></span></div>`).join('') || '<p style="color:var(--mut)">Sacola vazia.</p>';
   renderRetirada(); renderResumo();
   $('tot').textContent = R$(total()); pixBox();
 }
