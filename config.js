@@ -24,4 +24,4 @@ function pixPayload(valor, txid) {
 }
 
 // ── PWA: registra o service worker (requer HTTPS, como no GitHub Pages/Firebase Hosting) ──
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?cfg=' + encodeURIComponent(JSON.stringify(LOJA.firebase))).catch(() => {}));
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?cfg=' + encodeURIComponent(JSON.stringify(LOJA.firebase))).catch(console.error));
