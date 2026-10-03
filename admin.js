@@ -76,11 +76,11 @@ auth.onAuthStateChanged(u => {
   if (ok) iniciar();
 });
 function iniciar() {
-  ouvirPush();
+  ouvirPush(); criarBotaoVenda();
   db.collection('config').doc('loja').onSnapshot(s => { CFG = s.data() || {}; if (!ajInit) { ajInit = true; preencherAjustes(); } renderBairros(); });
   db.collection('pedidos').orderBy('criadoEm', 'desc').limit(100).onSnapshot(s => {
     if (!primeiro) s.docChanges().filter(c => c.type === 'added').forEach(c => {
-      const p = c.doc.data(), t = $('toast'); t.textContent = '🛍️ Novo pedido recebido!'; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 5000);
+      const p = c.doc.data(); if (p.origem === 'Manual') return; const t = $('toast'); t.textContent = '🛍️ Novo pedido recebido!'; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 5000);
       alertaPedido('🛍️ Novo pedido · ' + R$(p.total || 0), ((p.cliente && p.cliente.nome) || 'Cliente') + ' · ' + (p.pagamento || '') + ' · ' + (p.itens || []).map(i => i.nome + ' ' + i.tam + '×' + i.q).join(', '));
     });
     primeiro = false;
@@ -88,7 +88,7 @@ function iniciar() {
     $('peds').innerHTML = s.docs.map(d => { const p = d.data(), id = d.id, sc = STIDX[p.status] ?? 0, ent = p.entrega, end = ent && ent.endereco;
       const entHtml = !ent ? '' : ent.tipo === 'Retirada' ? '<br><small>🏬 Retirada na loja</small>' : '<br><small>📍 <a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(txtEnd(end)) + '" target="_blank" rel="noopener" style="color:inherit">' + esc(end.rua) + ', ' + esc(end.numero) + (end.complemento ? ' (' + esc(end.complemento) + ')' : '') + ' - ' + esc(end.bairro) + ', ' + esc(end.cidade) + '</a>' + (end.ref ? '<br>Ref.: ' + esc(end.ref) : '') + '</small>';
       const b = (txt, cls, st) => `<button class="ab ${cls}" ${p.status === st ? 'disabled' : ''} onclick="setStatus('${id}','${st}')">${txt}</button>`;
-      return `<tr><td data-l="Cliente"><b>${esc(p.cliente.nome)}</b><br><small style="color:var(--mut)">Pedido nº ${nPed(id)}</small>${entHtml}</td><td class="wa" data-l="WhatsApp">${esc(p.cliente.tel)}</td><td data-l="Itens"><small>${p.itens.map(i => esc(i.nome) + ' ' + esc(i.tam) + '×' + i.q).join('<br>')}</small></td>
+      return `<tr><td data-l="Cliente"><b>${esc(p.cliente.nome)}</b><br><small style="color:var(--mut)">Pedido nº ${nPed(id)}${p.origem === 'Manual' ? ' · 🧾 venda manual' : ''}</small>${entHtml}</td><td class="wa" data-l="WhatsApp">${esc(p.cliente.tel)}</td><td data-l="Itens"><small>${p.itens.map(i => esc(i.nome) + ' ' + esc(i.tam) + '×' + i.q).join('<br>')}</small></td>
       <td data-l="Data">${p.criadoEm ? p.criadoEm.toDate().toLocaleString('pt-BR') : ''}</td><td data-l="Pagamento">${esc(p.pagamento)}</td><td data-l="Valor">${R$(p.total)}${p.frete ? '<br><small style="color:var(--mut)">frete ' + R$(p.frete) + '</small>' : ''}</td>
       <td data-l="Status"><span class="st s${sc}">${esc(p.status)}</span></td>
       <td class="acoes">${b('Confirmar', 'b', 'Confirmado')}${b('Em separação', 'p', 'Em separação')}${b('Saiu p/ entrega', 'c', 'Saiu para entrega')}${b('Entregue', 'g', 'Entregue')}${b('Cancelar', 'r', 'Cancelado')}
@@ -539,4 +539,83 @@ async function testarAvisos() {
   } catch (e) { ok(false, 'Não consegui pedir o teste ao servidor (' + (e.code || e.message) + ') → publique o firestore.rules novo'); }
   L.push('', 'Se tudo está ✅ e o pedido de teste não avisa, olhe Firebase → Functions → Logs de "novoPedido".');
   alert(L.join('\n'));
+}
+
+// ── Venda manual: cliente que comprou fora do site ──
+// Cria um pedido já ENTREGUE (entra na receita e nos relatórios) e dá baixa no estoque das peças do catálogo.
+let VM = [];
+const VM_PAG = ['Pix', 'Dinheiro', 'Cartão de crédito', 'Cartão de débito'];
+const VM_IN = 'width:100%;box-sizing:border-box;padding:10px;margin:0 0 8px;border-radius:8px;border:1px solid #444;background:#222;color:#fff;font-size:14px';
+function criarBotaoVenda() {
+  if ($('bVM')) return;
+  const tb = $('peds') && $('peds').closest('table'); if (!tb) return;
+  const b = document.createElement('button'); b.id = 'bVM'; b.className = 'btn'; b.textContent = '➕ Registrar venda manual'; b.style.margin = '0 0 12px'; b.onclick = abrirVendaManual;
+  tb.parentNode.insertBefore(b, tb);
+}
+function abrirVendaManual() {
+  fecharVendaManual(); VM = [];
+  const h = new Date(), hoje = new Date(h - h.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const pags = [...new Set([...VM_PAG, ...Object.values(PED).map(p => p.pagamento).filter(Boolean)])];
+  const prods = Object.entries(PROD).sort((a, b) => (a[1].nome || '').localeCompare(b[1].nome || '', 'pt-BR'));
+  const d = document.createElement('div'); d.id = 'vm';
+  d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;overflow:auto;padding:16px;box-sizing:border-box';
+  d.innerHTML = `<div style="max-width:460px;margin:0 auto;background:#151515;color:#fff;border:1px solid #333;border-radius:14px;padding:18px">
+    <h3 style="margin:0 0 4px">🧾 Registrar venda manual</h3>
+    <p style="margin:0 0 14px;font-size:12px;color:#aaa">Para venda feita fora do site. Entra como <b>Entregue</b> e conta na receita.</p>
+    <label style="font-size:12px;color:#aaa">Cliente (opcional)</label><input id="vmN" placeholder="Nome" style="${VM_IN}">
+    <input id="vmT" inputmode="tel" placeholder="WhatsApp (opcional)" style="${VM_IN}">
+    <div style="border-top:1px solid #333;margin:6px 0 12px"></div>
+    <label style="font-size:12px;color:#aaa">Produto</label>
+    <select id="vmP" onchange="vmProd()" style="${VM_IN}"><option value="">— Item avulso (fora do catálogo) —</option>${prods.map(([id, p]) => `<option value="${esc(id)}">${esc(p.nome)}</option>`).join('')}</select>
+    <input id="vmNm" placeholder="Nome do item" style="${VM_IN}">
+    <div style="display:flex;gap:8px"><div style="flex:1"><label style="font-size:12px;color:#aaa">Tamanho</label><select id="vmTm" style="${VM_IN}"><option>Único</option></select></div>
+    <div style="width:70px"><label style="font-size:12px;color:#aaa">Qtd</label><input id="vmQ" type="number" min="1" value="1" inputmode="numeric" style="${VM_IN}"></div>
+    <div style="width:100px"><label style="font-size:12px;color:#aaa">Preço (R$)</label><input id="vmPr" type="number" step="0.01" min="0" inputmode="decimal" style="${VM_IN}"></div></div>
+    <button class="btn o" style="width:100%;margin-bottom:10px" onclick="vmAdd()">+ Adicionar item</button>
+    <div id="vmL" style="margin-bottom:12px"></div>
+    <label style="font-size:12px;color:#aaa">Forma de pagamento</label><input id="vmPg" list="vmPgL" value="Pix" style="${VM_IN}"><datalist id="vmPgL">${pags.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+    <label style="font-size:12px;color:#aaa">Data da venda</label><input id="vmD" type="date" value="${hoje}" max="${hoje}" style="${VM_IN}">
+    <div style="display:flex;gap:8px;margin-top:6px"><button class="btn o" style="flex:1" onclick="fecharVendaManual()">Cancelar</button><button id="vmS" class="btn" style="flex:1" onclick="salvarVendaManual()">Registrar venda</button></div></div>`;
+  document.body.appendChild(d); vmProd(); vmRender();
+}
+function fecharVendaManual() { const d = $('vm'); if (d) d.remove(); }
+function vmProd() {   // troca de produto: preenche tamanhos e preço
+  const id = $('vmP').value, p = PROD[id];
+  $('vmNm').style.display = p ? 'none' : 'block';
+  $('vmTm').innerHTML = (p ? (p.tamanhos || ['Único']) : ['Único']).map(t => `<option>${esc(t)}</option>`).join('');
+  $('vmPr').value = p ? (emPromo(p) ? p.promo : p.preco) : '';
+}
+function vmAdd() {
+  const id = $('vmP').value, p = PROD[id], q = parseInt($('vmQ').value), preco = parseFloat(String($('vmPr').value).replace(',', '.'));
+  const nome = p ? p.nome : $('vmNm').value.trim().slice(0, 80);
+  if (!nome) return alert('Digite o nome do item.');
+  if (!(q >= 1)) return alert('Quantidade inválida.');
+  if (!(preco >= 0)) return alert('Informe o preço.');
+  VM.push({ id: p ? id : 'avulso', nome, tam: $('vmTm').value, q, preco: Math.round(preco * 100) / 100 });
+  if (!p) $('vmNm').value = ''; $('vmQ').value = 1; vmRender();
+}
+function vmDel(i) { VM.splice(i, 1); vmRender(); }
+function vmRender() {
+  const tot = VM.reduce((a, i) => a + i.preco * i.q, 0);
+  $('vmL').innerHTML = VM.length
+    ? VM.map((i, k) => `<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><span style="flex:1">${i.q}× ${esc(i.nome)} (${esc(i.tam)})</span><b>${R$(i.preco * i.q)}</b><button class="ab r" onclick="vmDel(${k})">✕</button></div>`).join('')
+      + `<div style="display:flex;justify-content:space-between;border-top:1px solid #333;padding-top:8px;margin-top:6px"><span>Total</span><b style="font-size:16px">${R$(tot)}</b></div>`
+    : '<p style="color:#888;font-size:12px;margin:0">Nenhum item adicionado.</p>';
+}
+async function salvarVendaManual() {
+  if (!VM.length) return alert('Adicione pelo menos um item.');
+  const pag = $('vmPg').value.trim(); if (!pag) return alert('Informe a forma de pagamento.');
+  const nome = $('vmN').value.trim().slice(0, 80) || 'Cliente (venda manual)', tel = $('vmT').value.replace(/\D/g, '');
+  const dt = $('vmD').value ? new Date($('vmD').value + 'T12:00:00') : new Date();
+  const total = Math.round(VM.reduce((a, i) => a + i.preco * i.q, 0) * 100) / 100, btn = $('vmS'); btn.disabled = true;
+  let ref;
+  try {
+    // cria como "Novo" com estoque liberado e passa para "Entregue" pela mesma rotina dos pedidos (dá a baixa no estoque em transação)
+    ref = await db.collection('pedidos').add({ cliente: { nome, tel }, itens: VM.map(i => ({ ...i })), pagamento: pag, total, frete: 0, status: 'Novo', origem: 'Manual', estoqueEstado: 'liberado', criadoEm: firebase.firestore.Timestamp.fromDate(dt) });
+    await mudarStatus(ref.id, 'Entregue');
+    fecharVendaManual(); avisoAdm('Venda registrada ✔');
+  } catch (e) {
+    if (ref) await ref.delete().catch(() => {});   // não deixa venda pela metade
+    btn.disabled = false; alert('Não foi possível registrar a venda: ' + e.message);
+  }
 }
