@@ -21,15 +21,49 @@ const MSG_OLD = {
 const msgDe = k => { const m = CFG.msgs && CFG.msgs[k]; return (m && !(MSG_OLD[k] || []).includes(m)) ? m : MSG_PAD[k]; };
 let CFG = {}, ajInit = false, PED = {}, PROD = {}, logoNova;
 let primeiro = true;
+
+// ── Som: bipe de verdade (3 toques) + vibração, para quando o painel está aberto ──
+let actx;
+document.addEventListener('click', () => { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {} }, { once: true });
+function beep() {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    [0, 0.3, 0.6].forEach(t => {
+      const o = actx.createOscillator(), g = actx.createGain(), n = actx.currentTime + t;
+      o.type = 'square'; o.frequency.value = 880; o.connect(g); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.0001, n); g.gain.exponentialRampToValueAtTime(0.4, n + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, n + 0.22);
+      o.start(n); o.stop(n + 0.25);
+    });
+    if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
+  } catch (e) {}
+}
+const OPC_NOTIF = { icon: 'icon-192.png', badge: 'icon-192.png', renotify: true, silent: false, requireInteraction: true, vibrate: [300, 150, 300, 150, 500] };
+// Push com o painel ABERTO: o Firebase não chama o service worker, então mostramos a notificação aqui
+let ouvindoPush = false;
+function ouvirPush() {
+  if (ouvindoPush) return;
+  try {
+    firebase.messaging().onMessage(async m => {
+      const d = m.data || {}; beep();
+      if (window.Notification && Notification.permission === 'granted') {
+        const reg = await navigator.serviceWorker.ready;
+        reg.showNotification(d.title || 'Novo pedido', { ...OPC_NOTIF, body: d.body || '', tag: 'pedido-' + Date.now() });
+      }
+    });
+    ouvindoPush = true;
+  } catch (e) { console.error('ouvirPush:', e); }
+}
 auth.onAuthStateChanged(u => {
   const ok = u && u.email === LOJA.adminEmail;
   $('login').style.display = ok ? 'none' : 'block'; $('app').style.display = ok ? 'block' : 'none';
   if (ok) iniciar();
 });
 function iniciar() {
+  ouvirPush();
   db.collection('config').doc('loja').onSnapshot(s => { CFG = s.data() || {}; if (!ajInit) { ajInit = true; preencherAjustes(); } renderBairros(); });
   db.collection('pedidos').orderBy('criadoEm', 'desc').limit(100).onSnapshot(s => {
-    if (!primeiro && s.docChanges().some(c => c.type === 'added')) { const t = $('toast'); t.textContent = '🛍️ Novo pedido recebido!'; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 5000); try { new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=').play(); } catch (e) {} }
+    if (!primeiro && s.docChanges().some(c => c.type === 'added')) { const t = $('toast'); t.textContent = '🛍️ Novo pedido recebido!'; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 5000); beep(); }
     primeiro = false;
     PED = {}; s.docs.forEach(x => PED[x.id] = x.data());
     $('peds').innerHTML = s.docs.map(d => { const p = d.data(), id = d.id, sc = STIDX[p.status] ?? 0, ent = p.entrega, end = ent && ent.endereco;
@@ -71,7 +105,7 @@ async function ativarPush() {
     const reg = await navigator.serviceWorker.ready;
     const token = await firebase.messaging().getToken({ vapidKey: LOJA.vapidKey, serviceWorkerRegistration: reg });
     await db.collection('admTokens').doc(token).set({ em: firebase.firestore.FieldValue.serverTimestamp(), aparelho: navigator.userAgent.slice(0, 80) });
-    $('bPush').textContent = '🔔 Avisos ativos'; alert('Pronto! Este aparelho vai receber aviso de cada pedido novo.');
+    ouvirPush(); beep(); $('bPush').textContent = '🔔 Avisos ativos'; alert('Pronto! Este aparelho vai receber aviso de cada pedido novo.');
   } catch (e) { alert('Não foi possível ativar: ' + e.message); }
 }
 if (window.Notification && Notification.permission === 'granted') window.addEventListener('load', () => { const b = $('bPush'); if (b) b.textContent = '🔔 Avisos ativos'; });
@@ -325,9 +359,10 @@ const mesAnt = k => { const [y, m] = k.split('-').map(Number); return mkey(new D
 const ult12 = () => { const h = new Date(), r = []; for (let i = 0; i < 12; i++) r.push(mkey(new Date(h.getFullYear(), h.getMonth() - i, 1))); return r; };   // do mês atual para trás
 
 function aba(t) {
-  $('tP').style.display = t === 'P' ? 'block' : 'none'; $('tR').style.display = t === 'R' ? 'block' : 'none';
-  $('tbP').classList.toggle('on', t === 'P'); $('tbR').classList.toggle('on', t === 'R');
+  $('tP').style.display = t === 'P' ? 'block' : 'none'; $('tR').style.display = t === 'R' ? 'block' : 'none'; $('tC').style.display = t === 'C' ? 'block' : 'none';
+  $('tbP').classList.toggle('on', t === 'P'); $('tbR').classList.toggle('on', t === 'R'); $('tbC').classList.toggle('on', t === 'C');
   if (t === 'R') relCarregar();
+  if (t === 'C') clCarregar();
 }
 async function relCarregar() {
   const h = new Date(), ini = new Date(h.getFullYear(), h.getMonth() - 12, 1);   // 13 meses: dá para comparar o mês mais antigo com o anterior
@@ -386,4 +421,92 @@ function relCsv() {
   const linhas = [['Nº', 'Data', 'Cliente', 'Telefone', 'Itens', 'Entrega', 'Frete', 'Pagamento', 'Status', 'Total']].concat(l.map(p => [p.numero || '', p.criadoEm.toDate().toLocaleString('pt-BR'), p.cliente.nome, p.cliente.tel, (p.itens || []).map(i => i.nome + ' ' + i.tam + ' x' + i.q).join(' | '), p.entrega ? (p.entrega.tipo === 'Retirada' ? 'Retirada' : txtEnd(p.entrega.endereco)) : '', (p.frete || 0).toFixed(2).replace('.', ','), p.pagamento, p.status, (p.total || 0).toFixed(2).replace('.', ',')]));
   const blob = new Blob(['\ufeff' + linhas.map(r => r.map(c).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'pedidos-' + k + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ── Clientes e visitantes ──
+let clL = [];
+const clTs = x => x && x.toDate ? x.toDate() : null;
+const clFd = d => d ? d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+const clAp = u => /iPhone|iPad/.test(u) ? 'iPhone' : /Android/.test(u) ? 'Android' : /Windows/.test(u) ? 'Windows' : /Mac/.test(u) ? 'Mac' : '';
+async function clCarregar() {
+  try {
+    const [cs, vs, ps] = await Promise.all([db.collection('clientes').get(), db.collection('visitas').get(), db.collection('pedidos').limit(3000).get()]);
+    const M = {}, g = id => M[id] = M[id] || { id, nome: '', tel: '', bairro: '', n: 0, ped: 0, gasto: 0, ultVis: null, ultPed: null, ap: '' };
+    vs.docs.forEach(d => { const x = d.data(), c = g(d.id); c.n = x.n || 0; c.ultVis = clTs(x.ultima); c.ap = clAp(x.aparelho || ''); if (x.nome) c.nome = x.nome; });
+    cs.docs.forEach(d => { const x = d.data(), c = g(d.id); c.nome = ((x.nome || '') + ' ' + (x.sobrenome || '')).trim() || c.nome; c.tel = x.tel || ''; c.bairro = (x.end || {}).bairro || ''; });
+    ps.docs.forEach(d => {
+      const p = d.data(); if (!p.uid) return; const c = g(p.uid), t = clTs(p.criadoEm);
+      if (!c.nome && p.cliente) c.nome = p.cliente.nome; if (!c.tel && p.cliente) c.tel = p.cliente.tel;
+      if (t && (!c.ultPed || t > c.ultPed)) c.ultPed = t;
+      if (p.status !== 'Cancelado') { c.ped++; c.gasto += p.total || 0; }
+    });
+    clL = Object.values(M);
+  } catch (e) { return alert('Erro ao carregar clientes: ' + e.message + '\n\nConfira se o firestore.rules permite o admin ler "clientes" e "visitas".'); }
+  clRender();
+}
+function clRender() {
+  const q = $('clq').value.toLowerCase().trim(), fl = $('clf').value, od = $('clo').value, agora = Date.now(), ult = c => c.ultVis || c.ultPed;
+  const l = clL.filter(c => {
+    if (fl === 'cad' && !c.tel) return false; if (fl === 'comp' && !c.ped) return false; if (fl === 'vis' && c.tel) return false;
+    return !q || (c.nome + ' ' + c.tel + ' ' + c.bairro).toLowerCase().includes(q);
+  }).sort((a, b) => od === 'gasto' ? b.gasto - a.gasto : od === 'n' ? b.n - a.n : (ult(b) || 0) - (ult(a) || 0));
+  const online = clL.filter(c => c.ultVis && agora - c.ultVis < 3e5).length, hoje = clL.filter(c => c.ultVis && agora - c.ultVis < 864e5).length;
+  const kpi = (t, v, s) => `<div class="rc"><small>${t}</small><b>${v}</b><i>${s}</i></div>`;
+  $('clk').innerHTML = kpi('Pessoas', clL.length, 'visitantes + clientes') + kpi('Cadastradas', clL.filter(c => c.tel).length, 'com nome e WhatsApp') + kpi('Já compraram', clL.filter(c => c.ped).length, 'pedido não cancelado') + kpi('Entraram em 24h', hoje, 'visitas recentes') + kpi('Online agora', online, 'últimos 5 minutos');
+  $('clb').innerHTML = l.map(c => {
+    const tel = String(c.tel || '').replace(/\D/g, '');
+    return `<tr><td data-l="Quem"><b>${esc(c.nome || 'Visitante')}</b><br><small style="color:var(--mut)">${esc(c.bairro)}${c.bairro && c.ap ? ' · ' : ''}${esc(c.ap)}${!c.nome ? ' · ' + esc(c.id.slice(0, 6)) : ''}</small></td>
+    <td data-l="WhatsApp">${tel ? `<a href="https://wa.me/55${tel}" target="_blank" rel="noopener" style="color:inherit">${esc(c.tel)}</a>` : '—'}</td>
+    <td data-l="Visitas">${c.n || '—'}</td><td data-l="Última visita">${clFd(ult(c))}</td><td data-l="Pedidos">${c.ped || '—'}</td><td data-l="Total gasto">${c.gasto ? R$(c.gasto) : '—'}</td><td class="acoes"><button class="ab r" onclick="clApagar('${esc(c.id)}')">Apagar</button></td></tr>`;
+  }).join('') || '<tr><td colspan="7" style="color:var(--mut)">Nenhum resultado.</td></tr>';
+}
+// Apaga o cadastro (clientes) e o registro de visitas. Os PEDIDOS ficam, para não bagunçar relatórios e estoque.
+async function clApagar(id) {
+  const c = clL.find(x => x.id === id); if (!c) return;
+  if (!confirm('Apagar "' + (c.nome || 'Visitante') + '"?\n\nSerão removidos o cadastro e o histórico de visitas. Os pedidos dessa pessoa continuam salvos.')) return;
+  try {
+    const b = db.batch(); b.delete(db.collection('clientes').doc(id)); b.delete(db.collection('visitas').doc(id)); await b.commit();
+    clL = clL.filter(x => x.id !== id); clRender(); avisoAdm('Cliente apagado');
+  } catch (e) { alert('Erro ao apagar: ' + e.message); }
+}
+async function clApagarTodos() {
+  if (!clL.length) return alert('Não há clientes para apagar.');
+  if (!confirm('Apagar TODOS os ' + clL.length + ' clientes e visitantes?\n\nSerão removidos cadastros e histórico de visitas. Os pedidos continuam salvos. Isso não tem volta.')) return;
+  if ((prompt('Para confirmar, digite APAGAR') || '').trim().toUpperCase() !== 'APAGAR') return alert('Cancelado: nada foi apagado.');
+  try {
+    const ids = clL.map(x => x.id);
+    for (let i = 0; i < ids.length; i += 200) {   // lotes de 200 (2 apagamentos por pessoa, limite de 500 por lote)
+      const b = db.batch(); ids.slice(i, i + 200).forEach(id => { b.delete(db.collection('clientes').doc(id)); b.delete(db.collection('visitas').doc(id)); }); await b.commit();
+    }
+    clL = []; clRender(); avisoAdm('Todos os clientes foram apagados');
+  } catch (e) { alert('Erro ao apagar: ' + e.message); }
+}
+function clCsv() {
+  const c = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const rows = [['Nome', 'WhatsApp', 'Bairro', 'Visitas', 'Última visita', 'Pedidos', 'Total gasto']].concat(clL.map(x => [x.nome || 'Visitante', x.tel, x.bairro, x.n, clFd(x.ultVis || x.ultPed), x.ped, x.gasto.toFixed(2).replace('.', ',')]));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + rows.map(r => r.map(c).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'clientes.csv'; document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ── Diagnóstico dos avisos: mostra em qual etapa o push quebra ──
+async function testarAvisos() {
+  const L = [], ok = (b, t) => L.push((b ? '✅ ' : '❌ ') + t);
+  const seguro = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  ok(seguro, 'Endereço seguro (' + location.protocol + '//' + location.host + ')' + (seguro ? '' : ' → abra por https:// ou localhost, nunca por file://'));
+  ok('serviceWorker' in navigator, 'Navegador tem service worker');
+  ok(!!window.Notification, 'Navegador tem notificações');
+  let regs = []; try { regs = await navigator.serviceWorker.getRegistrations(); } catch (e) {}
+  const sw = regs.find(r => r.active); ok(!!sw, 'Service worker ativo' + (sw ? '' : ' → recarregue com Ctrl+Shift+R'));
+  let sup = false; try { sup = await firebase.messaging.isSupported(); } catch (e) {} ok(sup, 'Este navegador suporta push (FCM)' + (sup ? '' : ' → use Chrome/Edge fora do VS Code'));
+  ok(window.Notification && Notification.permission === 'granted', 'Permissão de notificação: ' + (window.Notification ? Notification.permission : 'n/d') + (Notification.permission === 'denied' ? ' → libere no cadeado da barra de endereço' : ''));
+  ok(!!LOJA.vapidKey, 'vapidKey preenchida no config.js');
+  try { const n = (await db.collection('admTokens').get()).size; ok(n > 0, 'Aparelhos registrados em admTokens: ' + n + (n ? '' : ' → clique em 🔔 Ativar avisos')); }
+  catch (e) { ok(false, 'Sem acesso a admTokens (' + e.code + ') → ajuste o firestore.rules'); }
+  beep();
+  if (window.Notification && Notification.permission === 'granted' && sw) {
+    try { await sw.showNotification('🔧 Teste de aviso', { ...OPC_NOTIF, body: 'Se você viu e ouviu isto, o aparelho está pronto.', tag: 'teste' }); ok(true, 'Notificação de teste enviada (deve aparecer agora, com som)'); }
+    catch (e) { ok(false, 'Falha ao mostrar notificação: ' + e.message); }
+  }
+  L.push('', 'Se tudo está ✅ e o pedido de teste não avisa, olhe Firebase → Functions → Logs de "novoPedido".');
+  alert(L.join('\n'));
 }
